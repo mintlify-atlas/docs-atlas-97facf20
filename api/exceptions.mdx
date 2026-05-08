@@ -1,0 +1,362 @@
+---
+title: "Exceptions — error handling in notebooklm-py"
+description: "Complete reference for the notebooklm-py exception hierarchy, including RPC, network, domain, and authentication errors with handling examples."
+---
+
+Every exception raised by notebooklm-py inherits from `NotebookLMError`, so you can catch all library errors with a single `except` clause. The hierarchy is organized into three layers: validation and configuration errors, RPC and network errors raised by the transport layer, and domain-specific errors for notebooks, sources, artifacts, and chat.
+
+<Note>
+  All exceptions in this library inherit from `NotebookLMError`. You can use it as a catch-all to handle any library error uniformly.
+</Note>
+
+## Exception hierarchy
+
+```
+NotebookLMError
+├── ValidationError              # Invalid input or parameters
+├── ConfigurationError           # Missing or invalid auth/storage
+├── NetworkError                 # Connection failures before RPC
+│   └── RPCTimeoutError          # Request timed out (transport-level)
+├── RPCError                     # RPC failures after connection
+│   ├── DecodingError            # Failed to parse response
+│   │   └── UnknownRPCMethodError  # Response structure changed
+│   ├── AuthError                # Auth/authorization failure
+│   ├── RateLimitError           # Rate limit exceeded
+│   ├── ServerError              # 5xx HTTP responses
+│   └── ClientError              # 4xx HTTP responses (not auth/rate)
+├── NotebookError                # Notebook operations
+│   ├── NotebookNotFoundError    # Notebook ID not found
+│   └── NotebookLimitError       # Notebook quota exhausted
+├── SourceError                  # Source operations
+│   ├── SourceAddError           # Failed to add a source
+│   ├── SourceNotFoundError      # Source ID not found
+│   ├── SourceProcessingError    # Source failed to process
+│   └── SourceTimeoutError       # Timed out waiting for source
+├── ArtifactError                # Artifact operations
+│   ├── ArtifactNotFoundError    # Artifact ID not found
+│   ├── ArtifactNotReadyError    # Artifact not yet completed
+│   ├── ArtifactParseError       # Artifact data cannot be parsed
+│   └── ArtifactDownloadError    # Download failed
+└── ChatError                    # Chat operations
+```
+
+<Tip>
+  Catch `NotebookLMError` as a catch-all when you want to handle any library error uniformly, then add specific `except` clauses above it for errors that require different behavior.
+</Tip>
+
+---
+
+## Base exception
+
+### NotebookLMError
+
+Base class for all notebooklm-py exceptions. Import from `notebooklm` directly.
+
+```python
+from notebooklm import NotebookLMError
+
+try:
+    notebooks = await client.notebooks.list()
+except NotebookLMError as e:
+    print(f"Library error: {e}")
+```
+
+---
+
+## Validation and configuration
+
+### ValidationError
+
+Raised when you pass invalid input or parameters to an API method—for example, an unsupported `source` or `mode` combination in `research.start()`.
+
+### ConfigurationError
+
+Raised when authentication or storage configuration is missing or malformed—for example, when `from_storage()` cannot find a `storage_state.json` file and no `NOTEBOOKLM_AUTH_JSON` environment variable is set.
+
+```python
+from notebooklm import ConfigurationError, NotebookLMClient
+
+try:
+    client = await NotebookLMClient.from_storage()
+except ConfigurationError as e:
+    print(f"Not logged in: {e}")
+    print("Run: notebooklm login")
+```
+
+---
+
+## Network errors
+
+### NetworkError
+
+Raised for connection failures, DNS errors, and transport-level timeouts that occur before an RPC response is received. You can safely retry on `NetworkError`.
+
+**Attributes:**
+- `method_id` — The RPC method ID that failed, if known.
+- `original_error` — The underlying network exception.
+
+### RPCTimeoutError
+
+Raised when an RPC request exceeds its timeout. Inherits from `NetworkError` since timeouts are transport-level.
+
+**Attributes:**
+- `timeout_seconds` — The timeout duration that was exceeded.
+- `method_id` — The RPC method that timed out.
+- `original_error` — The underlying timeout exception.
+
+---
+
+## RPC errors
+
+### RPCError
+
+Base class for all failures that occur after a connection is established. Raised when the Google API returns an error response.
+
+**Attributes:**
+- `method_id` — RPC method ID for debugging.
+- `raw_response` — First 500 characters of the raw response.
+- `rpc_code` — Google's internal error code, if available.
+
+```python
+from notebooklm import RPCError
+
+try:
+    result = await client.notebooks.create("Test")
+except RPCError as e:
+    print(f"RPC failed: {e}")
+    print(f"Method: {e.method_id}, Code: {e.rpc_code}")
+```
+
+### DecodingError
+
+Raised when the library cannot parse the API response structure. This usually indicates Google has changed the response format.
+
+### UnknownRPCMethodError
+
+Raised when the response structure does not match expectations. Check for a newer version of notebooklm-py if you see this error.
+
+### AuthError
+
+Raised for authentication and authorization failures (HTTP 401/403). The client automatically attempts to refresh CSRF tokens on auth errors. If the underlying session cookies have expired, you must re-run `notebooklm login`.
+
+**Attributes:**
+- `recoverable` — `True` when re-authentication might resolve the error.
+
+```python
+from notebooklm import AuthError
+
+try:
+    notebooks = await client.notebooks.list()
+except AuthError as e:
+    if e.recoverable:
+        await client.refresh_auth()
+        notebooks = await client.notebooks.list()  # retry
+    else:
+        print("Session expired. Run: notebooklm login")
+```
+
+### RateLimitError
+
+Raised when Google's API rate limit or daily quota is exceeded.
+
+**Attributes:**
+- `retry_after` — Seconds to wait before retrying, if provided by the API.
+
+```python
+import asyncio
+from notebooklm import RateLimitError
+
+async def generate_with_retry(client, nb_id, retries=3):
+    for attempt in range(retries):
+        try:
+            return await client.artifacts.generate_audio(nb_id)
+        except RateLimitError as e:
+            wait = e.retry_after or (10 * (attempt + 1))
+            print(f"Rate limited. Waiting {wait}s...")
+            await asyncio.sleep(wait)
+    raise RuntimeError("Max retries exceeded")
+```
+
+### ServerError
+
+Raised for HTTP 5xx responses from Google's servers.
+
+**Attributes:**
+- `status_code` — The HTTP status code (500–599).
+
+### ClientError
+
+Raised for HTTP 4xx responses that are not authentication or rate-limit errors.
+
+**Attributes:**
+- `status_code` — The HTTP status code (400–499).
+
+---
+
+## Domain errors: notebooks
+
+### NotebookError
+
+Base class for notebook operation errors.
+
+### NotebookNotFoundError
+
+Raised when a notebook ID does not exist or is not accessible.
+
+**Attributes:**
+- `notebook_id` — The ID that was not found.
+
+### NotebookLimitError
+
+Raised when creating a notebook would exceed the account's quota. The error message includes the current count and a link to manage notebooks.
+
+**Attributes:**
+- `current_count` — Number of owned notebooks reported by the list API.
+- `limit` — Server-reported notebook limit, if known.
+
+```python
+from notebooklm import NotebookLimitError
+
+try:
+    nb = await client.notebooks.create("New Research")
+except NotebookLimitError as e:
+    print(f"At limit ({e.current_count} notebooks). Delete some at notebooklm.google.com")
+```
+
+---
+
+## Domain errors: sources
+
+### SourceError
+
+Base class for source operation errors.
+
+### SourceAddError
+
+Raised when adding a source fails. Common causes include invalid URLs, paywalled content, empty pages, or rate limiting.
+
+**Attributes:**
+- `url` — The URL or identifier that failed.
+- `cause` — The underlying exception.
+
+### SourceNotFoundError
+
+Raised when a source ID does not exist in the specified notebook.
+
+**Attributes:**
+- `source_id` — The ID that was not found.
+
+### SourceProcessingError
+
+Raised when a source enters an error state during processing (status=3).
+
+**Attributes:**
+- `source_id` — The ID of the failed source.
+- `status` — The status code (typically `3` for ERROR).
+
+### SourceTimeoutError
+
+Raised when `source wait` or polling exceeds the configured timeout while waiting for a source to become ready.
+
+**Attributes:**
+- `source_id` — The ID of the source.
+- `timeout` — The timeout duration in seconds.
+- `last_status` — The last observed status before the timeout.
+
+```python
+from notebooklm import SourceAddError, SourceProcessingError, SourceTimeoutError
+
+try:
+    src = await client.sources.add_url(nb_id, "https://example.com/article")
+except SourceAddError as e:
+    print(f"Could not add source: {e.url}")
+    print(f"Cause: {e.cause}")
+except SourceProcessingError as e:
+    print(f"Source {e.source_id} failed to process (status={e.status})")
+except SourceTimeoutError as e:
+    print(f"Source {e.source_id} not ready after {e.timeout}s")
+```
+
+---
+
+## Domain errors: artifacts
+
+### ArtifactError
+
+Base class for artifact operation errors.
+
+### ArtifactNotFoundError
+
+Raised when an artifact ID does not exist in the specified notebook or when no completed artifact of the requested type is found.
+
+**Attributes:**
+- `artifact_id` — The ID that was not found.
+- `artifact_type` — The type of artifact (e.g., `"audio"`, `"video"`).
+
+### ArtifactNotReadyError
+
+Raised when you attempt to download an artifact that has not yet completed generation.
+
+**Attributes:**
+- `artifact_type` — The type of artifact.
+- `artifact_id` — The ID, if known.
+- `status` — The current status string, if known.
+
+### ArtifactParseError
+
+Raised when the library cannot parse artifact content into the expected format.
+
+**Attributes:**
+- `artifact_type` — The type being parsed.
+- `artifact_id` — The ID, if known.
+- `details` — Additional error details.
+- `cause` — The underlying exception.
+
+### ArtifactDownloadError
+
+Raised when downloading artifact content fails—for example, when the download URL is expired or inaccessible.
+
+**Attributes:**
+- `artifact_type` — The type being downloaded.
+- `artifact_id` — The ID, if known.
+- `details` — Additional error details.
+- `cause` — The underlying exception.
+
+```python
+from notebooklm import ArtifactNotFoundError, ArtifactNotReadyError, ArtifactDownloadError
+
+try:
+    path = await client.artifacts.download_audio(nb_id, "podcast.mp4")
+except ArtifactNotReadyError as e:
+    print(f"Not ready yet (status: {e.status}). Poll again later.")
+except ArtifactNotFoundError:
+    print("No completed audio found. Generate one first.")
+except ArtifactDownloadError as e:
+    print(f"Download failed: {e.details}")
+```
+
+---
+
+## Domain errors: chat
+
+### ChatError
+
+Base class for chat operation errors. Raised when a question cannot be processed by the chat API.
+
+---
+
+## Warnings
+
+### UnknownTypeWarning
+
+A `UserWarning` emitted (not raised) when the API returns a source or artifact type code that notebooklm-py does not recognize. The `.kind` property returns `SourceType.UNKNOWN` or `ArtifactType.UNKNOWN` in this case.
+
+```python
+import warnings
+from notebooklm import UnknownTypeWarning
+
+# Suppress unknown type warnings in production
+warnings.filterwarnings("ignore", category=UnknownTypeWarning)
+```
+
+If you see this warning, consider updating notebooklm-py to the latest version, as Google may have added a new source or artifact type.

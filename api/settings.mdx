@@ -1,0 +1,166 @@
+---
+title: "SettingsAPI — language and account limits"
+description: "Full reference for client.settings: read and set the global output language for artifact generation, and retrieve your account tier and usage limits."
+---
+
+`client.settings` exposes two categories of account-level data: the output language used for all AI-generated content, and the quota information (plan tier, maximum notebooks, maximum sources per notebook) that governs what your account can do. Language is a **global** setting — changing it affects artifact generation across every notebook in your account.
+
+## Methods
+
+### `get_output_language()`
+
+Returns the current output language setting for the account.
+
+```python
+async def get_output_language() -> Optional[str]
+```
+
+<ResponseField name="return" type="str | None">
+  BCP 47 language code such as `"en"`, `"ja"`, or `"zh_Hans"`. Returns `None` if no language has been explicitly set (the API uses the account's locale default).
+</ResponseField>
+
+```python
+lang = await client.settings.get_output_language()
+print(f"Current language: {lang}")  # e.g. "en", "ja", "zh_Hans"
+```
+
+---
+
+### `set_output_language(language)`
+
+Sets the output language for all AI artifact generation (audio, video, reports, etc.) across all notebooks.
+
+```python
+async def set_output_language(language: str) -> Optional[str]
+```
+
+<ParamField path="language" type="str" required>
+  BCP 47 language code. See the language table below for common values. Run `notebooklm language list` in the CLI to see all 80+ supported languages.
+</ParamField>
+
+<ResponseField name="return" type="str | None">
+  The language code that was set, or `None` on failure.
+</ResponseField>
+
+<Warning>
+  Language is a **global account setting**. Changing it affects artifact generation for every notebook — not just the one you are currently working in.
+</Warning>
+
+```python
+result = await client.settings.set_output_language("ja")
+print(f"Language set to: {result}")  # "ja"
+```
+
+Common language codes:
+
+| Code | Language |
+|---|---|
+| `en` | English |
+| `zh_Hans` | Chinese (Simplified) |
+| `zh_Hant` | Chinese (Traditional) |
+| `ja` | Japanese |
+| `ko` | Korean |
+| `es` | Spanish |
+| `fr` | French |
+| `de` | German |
+| `pt_BR` | Portuguese (Brazil) |
+
+---
+
+### `get_account_limits()`
+
+Returns the account's quota configuration, such as the maximum number of notebooks and the maximum number of sources per notebook.
+
+```python
+async def get_account_limits() -> AccountLimits
+```
+
+<ResponseField name="return" type="AccountLimits">
+  Object with quota fields. Use this — rather than `get_account_tier()` — for any programmatic quota decisions, because the raw tier name may not match the enforced limits.
+</ResponseField>
+
+```python
+limits = await client.settings.get_account_limits()
+print(f"Max notebooks: {limits.notebook_limit}")
+print(f"Max sources per notebook: {limits.sources_per_notebook_limit}")
+```
+
+---
+
+### `get_account_tier()`
+
+Returns the current NotebookLM subscription tier.
+
+```python
+async def get_account_tier() -> AccountTier
+```
+
+<ResponseField name="return" type="AccountTier">
+  Object with `tier` (internal string) and `plan_name` (display name, may be `None`).
+</ResponseField>
+
+<Info>
+  The `tier` string is internal NotebookLM metadata. For quota decisions, prefer `get_account_limits()`, which reflects the limits actually enforced by the API.
+</Info>
+
+```python
+tier = await client.settings.get_account_tier()
+print(f"Plan: {tier.plan_name or tier.tier}")
+```
+
+---
+
+## `AccountLimits` dataclass
+
+<ResponseField name="notebook_limit" type="int | None">
+  Maximum number of notebooks the account can own. `None` if the server does not report a limit.
+</ResponseField>
+
+<ResponseField name="sources_per_notebook_limit" type="int | None">
+  Maximum number of sources per notebook. `None` if unreported.
+</ResponseField>
+
+---
+
+## `AccountTier` dataclass
+
+<ResponseField name="tier" type="str">
+  Internal tier identifier string returned by the API.
+</ResponseField>
+
+<ResponseField name="plan_name" type="str | None">
+  Human-readable plan name, or `None` if not provided by the API.
+</ResponseField>
+
+---
+
+## Complete example
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        # Check current language
+        lang = await client.settings.get_output_language()
+        print(f"Current language: {lang}")
+
+        # Switch to Japanese for artifact generation
+        result = await client.settings.set_output_language("ja")
+        print(f"Language now: {result}")
+
+        # Check account limits before bulk operations
+        limits = await client.settings.get_account_limits()
+        print(f"Notebook limit: {limits.notebook_limit}")
+        print(f"Sources per notebook limit: {limits.sources_per_notebook_limit}")
+
+        # Get subscription tier
+        tier = await client.settings.get_account_tier()
+        print(f"Plan: {tier.plan_name or tier.tier}")
+
+        # Restore to English
+        await client.settings.set_output_language("en")
+
+asyncio.run(main())
+```

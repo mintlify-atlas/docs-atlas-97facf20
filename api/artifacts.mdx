@@ -1,0 +1,616 @@
+---
+title: "ArtifactsAPI — generate and download content"
+description: "Full reference for client.artifacts: generate, poll, download, and export AI content—audio, video, quizzes, flashcards, reports, slide decks, and infographics."
+---
+
+`client.artifacts` is the gateway to all AI-generated studio content in NotebookLM. You call a generation method to kick off an async task, poll or wait for it to complete, then download the result to a local file or export it to Google Docs or Sheets. Every generation method returns a `GenerationStatus` containing a `task_id` you pass to `wait_for_completion()` or `poll_status()`.
+
+## Core methods
+
+### `list(notebook_id, artifact_type)`
+
+Lists all artifacts in a notebook, including mind maps stored in the notes system.
+
+```python
+async def list(
+    notebook_id: str,
+    artifact_type: ArtifactType | None = None,
+) -> list[Artifact]
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="artifact_type" type="ArtifactType | None" default="None">
+  Filter by type. Pass `ArtifactType.AUDIO`, `ArtifactType.REPORT`, etc. `None` returns all types.
+</ParamField>
+
+<ResponseField name="return" type="list[Artifact]">
+  List of `Artifact` objects ordered by creation time.
+</ResponseField>
+
+---
+
+### `get(notebook_id, artifact_id)`
+
+Fetches a single artifact by ID.
+
+```python
+async def get(notebook_id: str, artifact_id: str) -> Artifact | None
+```
+
+<ResponseField name="return" type="Artifact | None">
+  `Artifact` object, or `None` if not found.
+</ResponseField>
+
+---
+
+### `delete(notebook_id, artifact_id)`
+
+Permanently deletes an artifact.
+
+```python
+async def delete(notebook_id: str, artifact_id: str) -> bool
+```
+
+<ResponseField name="return" type="bool">
+  `True` when deletion succeeds.
+</ResponseField>
+
+---
+
+### `rename(notebook_id, artifact_id, new_title)`
+
+Renames an artifact.
+
+```python
+async def rename(notebook_id: str, artifact_id: str, new_title: str) -> None
+```
+
+---
+
+### `poll_status(notebook_id, task_id)`
+
+Checks the current status of a generation task.
+
+```python
+async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus
+```
+
+<ResponseField name="return" type="GenerationStatus">
+  Object with `task_id`, `is_complete` (bool), and `status` (str).
+</ResponseField>
+
+---
+
+### `wait_for_completion(notebook_id, task_id, timeout, poll_interval)`
+
+Polls until generation is complete or the timeout is reached.
+
+```python
+async def wait_for_completion(
+    notebook_id: str,
+    task_id: str,
+    timeout: float = 300,
+    poll_interval: float = 5,
+) -> GenerationStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="task_id" type="str" required>
+  The `task_id` from the `GenerationStatus` returned by a generate method.
+</ParamField>
+
+<ParamField path="timeout" type="float" default="300">
+  Maximum seconds to wait before returning regardless of completion state.
+</ParamField>
+
+<ParamField path="poll_interval" type="float" default="5">
+  Seconds between each status poll.
+</ParamField>
+
+<ResponseField name="return" type="GenerationStatus">
+  Final `GenerationStatus`. Check `final.is_complete` before downloading.
+</ResponseField>
+
+```python
+status = await client.artifacts.generate_audio(nb_id)
+final = await client.artifacts.wait_for_completion(
+    nb_id, status.task_id, timeout=300, poll_interval=5
+)
+if final.is_complete:
+    path = await client.artifacts.download_audio(nb_id, "podcast.mp3")
+    print(f"Saved to: {path}")
+else:
+    print(f"Failed or timed out: {final.status}")
+```
+
+---
+
+## Type-specific list methods
+
+Convenience wrappers around `list()` that filter to a single artifact type.
+
+| Method | Returns |
+|---|---|
+| `list_audio(notebook_id)` | `list[Artifact]` — Audio Overviews |
+| `list_video(notebook_id)` | `list[Artifact]` — Video Overviews |
+| `list_reports(notebook_id)` | `list[Artifact]` — Briefing Docs, Study Guides, Blog Posts |
+| `list_quizzes(notebook_id)` | `list[Artifact]` — Quiz artifacts |
+| `list_flashcards(notebook_id)` | `list[Artifact]` — Flashcard artifacts |
+| `list_infographics(notebook_id)` | `list[Artifact]` — Infographic artifacts |
+| `list_slide_decks(notebook_id)` | `list[Artifact]` — Slide deck artifacts |
+| `list_data_tables(notebook_id)` | `list[Artifact]` — Data table artifacts |
+
+---
+
+## Generation methods
+
+### `generate_audio()`
+
+Generates an Audio Overview (podcast) from the notebook's sources.
+
+```python
+async def generate_audio(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+    audio_format: AudioFormat | None = None,
+    audio_length: AudioLength | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_ids" type="list[str] | None" default="None">
+  IDs of sources to include. `None` uses all sources.
+</ParamField>
+
+<ParamField path="language" type="str" default="en">
+  BCP 47 language code for the output.
+</ParamField>
+
+<ParamField path="instructions" type="str | None" default="None">
+  Custom instructions for the podcast hosts.
+</ParamField>
+
+<ParamField path="audio_format" type="AudioFormat | None" default="None">
+  `DEEP_DIVE` · `BRIEF` · `CRITIQUE` · `DEBATE`. Defaults to `DEEP_DIVE` when `None`.
+</ParamField>
+
+<ParamField path="audio_length" type="AudioLength | None" default="None">
+  `SHORT` · `DEFAULT` · `LONG`.
+</ParamField>
+
+```python
+from notebooklm import AudioFormat, AudioLength
+
+status = await client.artifacts.generate_audio(
+    nb_id,
+    instructions="Focus on practical applications",
+    audio_format=AudioFormat.DEEP_DIVE,
+    audio_length=AudioLength.LONG,
+    language="en",
+)
+```
+
+---
+
+### `generate_video()`
+
+Generates a Video Overview.
+
+```python
+async def generate_video(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+    video_format: VideoFormat | None = None,
+    video_style: VideoStyle | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="video_format" type="VideoFormat | None" default="None">
+  `EXPLAINER` · `BRIEF`.
+</ParamField>
+
+<ParamField path="video_style" type="VideoStyle | None" default="None">
+  `AUTO_SELECT` · `CLASSIC` · `WHITEBOARD` · `KAWAII` · `ANIME` · `WATERCOLOR` · `RETRO_PRINT` · `HERITAGE` · `PAPER_CRAFT`.
+</ParamField>
+
+```python
+from notebooklm import VideoFormat, VideoStyle
+
+status = await client.artifacts.generate_video(
+    nb_id,
+    video_format=VideoFormat.EXPLAINER,
+    video_style=VideoStyle.WHITEBOARD,
+)
+```
+
+---
+
+### `generate_cinematic_video()`
+
+Generates a cinematic-style video. This is a convenience wrapper around `generate_video()` with `video_format=VideoFormat.CINEMATIC`.
+
+```python
+async def generate_cinematic_video(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+    video_style: VideoStyle | None = None,
+) -> GenerationStatus
+```
+
+```python
+status = await client.artifacts.generate_cinematic_video(
+    nb_id,
+    instructions="documentary-style summary",
+    video_style=VideoStyle.CLASSIC,
+)
+```
+
+Equivalent CLI command: `notebooklm generate cinematic-video "documentary-style summary"`
+
+---
+
+### `generate_study_guide()`
+
+Generates a Study Guide report. This is a convenience wrapper around `generate_report()` with `report_format=ReportFormat.STUDY_GUIDE`.
+
+```python
+async def generate_study_guide(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    extra_instructions: str | None = None,
+) -> GenerationStatus
+```
+
+```python
+status = await client.artifacts.generate_study_guide(
+    nb_id,
+    extra_instructions="Target audience: beginners",
+)
+```
+
+---
+
+### `generate_report()`
+
+Generates a report in one of four formats.
+
+```python
+async def generate_report(
+    notebook_id: str,
+    report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    custom_prompt: str | None = None,
+    extra_instructions: str | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="report_format" type="ReportFormat" default="BRIEFING_DOC">
+  `BRIEFING_DOC` · `STUDY_GUIDE` · `BLOG_POST` · `CUSTOM`.
+</ParamField>
+
+<ParamField path="custom_prompt" type="str | None" default="None">
+  Full generation prompt when `report_format=CUSTOM`. Ignored for built-in formats.
+</ParamField>
+
+<ParamField path="extra_instructions" type="str | None" default="None">
+  Additional instructions appended to the built-in template. Ignored when `report_format=CUSTOM` (embed everything in `custom_prompt` instead).
+</ParamField>
+
+```python
+from notebooklm import ReportFormat
+
+status = await client.artifacts.generate_report(
+    nb_id,
+    report_format=ReportFormat.STUDY_GUIDE,
+    extra_instructions="Include a glossary section",
+)
+```
+
+---
+
+### `generate_quiz()`
+
+Generates a multiple-choice quiz.
+
+```python
+async def generate_quiz(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    instructions: str | None = None,
+    quantity: QuizQuantity | None = None,
+    difficulty: QuizDifficulty | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="quantity" type="QuizQuantity | None" default="None">
+  `FEWER` · `STANDARD` · `MORE` (note: `MORE` is an alias for `STANDARD` in the API).
+</ParamField>
+
+<ParamField path="difficulty" type="QuizDifficulty | None" default="None">
+  `EASY` · `MEDIUM` · `HARD`.
+</ParamField>
+
+---
+
+### `generate_flashcards()`
+
+Generates a set of flashcards.
+
+```python
+async def generate_flashcards(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    instructions: str | None = None,
+    quantity: QuizQuantity | None = None,
+    difficulty: QuizDifficulty | None = None,
+) -> GenerationStatus
+```
+
+Parameters mirror `generate_quiz()`.
+
+---
+
+### `generate_infographic()`
+
+Generates an infographic image.
+
+```python
+async def generate_infographic(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+    orientation: InfographicOrientation | None = None,
+    detail_level: InfographicDetail | None = None,
+    style: InfographicStyle | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="orientation" type="InfographicOrientation | None" default="None">
+  `LANDSCAPE` · `PORTRAIT` · `SQUARE`.
+</ParamField>
+
+<ParamField path="detail_level" type="InfographicDetail | None" default="None">
+  `CONCISE` · `STANDARD` · `DETAILED`.
+</ParamField>
+
+---
+
+### `generate_slide_deck()`
+
+Generates a presentation slide deck.
+
+```python
+async def generate_slide_deck(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+    slide_format: SlideDeckFormat | None = None,
+    slide_length: SlideDeckLength | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="slide_format" type="SlideDeckFormat | None" default="None">
+  `DETAILED_DECK` · `PRESENTER_SLIDES`.
+</ParamField>
+
+<ParamField path="slide_length" type="SlideDeckLength | None" default="None">
+  `DEFAULT` · `SHORT`.
+</ParamField>
+
+---
+
+### `generate_data_table()`
+
+Generates a structured data table.
+
+```python
+async def generate_data_table(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+) -> GenerationStatus
+```
+
+<ParamField path="instructions" type="str | None" default="None">
+  Natural language description of the desired table structure and columns.
+</ParamField>
+
+---
+
+### `generate_mind_map()`
+
+Generates an interactive mind map and saves it as a note.
+
+```python
+async def generate_mind_map(
+    notebook_id: str,
+    source_ids: list[str] | None = None,
+    language: str = "en",
+    instructions: str | None = None,
+) -> dict
+```
+
+<ResponseField name="return" type="dict">
+  Dict with `mind_map` (parsed JSON tree with `name` and `children` keys) and `note_id` (the ID of the note where the mind map is stored).
+</ResponseField>
+
+```python
+result = await client.artifacts.generate_mind_map(nb_id)
+print(result["mind_map"]["name"])   # Root node title
+print(result["note_id"])            # Note ID for later retrieval
+```
+
+---
+
+## `GenerationStatus` dataclass
+
+<ResponseField name="task_id" type="str">
+  Task identifier. Pass to `poll_status()` or `wait_for_completion()`.
+</ResponseField>
+
+<ResponseField name="is_complete" type="bool">
+  `True` when the generation task has finished successfully.
+</ResponseField>
+
+<ResponseField name="status" type="str">
+  Status string such as `"completed"`, `"processing"`, or `"failed"`.
+</ResponseField>
+
+---
+
+## Download methods
+
+All download methods accept an optional `artifact_id`. When omitted they automatically select the most recently completed artifact of that type. They raise `ValueError` if no completed artifact exists.
+
+```python
+# Most recent completed audio
+path = await client.artifacts.download_audio(nb_id, "podcast.mp4")
+
+# Specific artifact
+path = await client.artifacts.download_audio(nb_id, "podcast.mp4", artifact_id="abc123")
+```
+
+| Method | Output format | Notes |
+|---|---|---|
+| `download_audio(nb_id, output_path, artifact_id=None)` | MP4/MP3 | |
+| `download_video(nb_id, output_path, artifact_id=None)` | MP4 | |
+| `download_infographic(nb_id, output_path, artifact_id=None)` | PNG | |
+| `download_slide_deck(nb_id, output_path, artifact_id=None, output_format="pdf")` | PDF or PPTX | `output_format="pptx"` also supported |
+| `download_report(nb_id, output_path, artifact_id=None)` | Markdown (`.md`) | Extracts markdown from Briefing Doc, Study Guide, Blog Post |
+| `download_mind_map(nb_id, output_path, artifact_id=None)` | JSON | Tree: `{"name": "Topic", "children": [...]}` |
+| `download_data_table(nb_id, output_path, artifact_id=None)` | CSV | UTF-8 with BOM for Excel compatibility |
+| `download_quiz(nb_id, output_path, artifact_id=None, output_format="json")` | JSON / Markdown / HTML | `output_format`: `"json"`, `"markdown"`, `"html"` |
+| `download_flashcards(nb_id, output_path, artifact_id=None, output_format="json")` | JSON / Markdown / HTML | JSON normalizes `f`/`b` keys to `front`/`back` |
+
+---
+
+## Export methods
+
+Export artifacts to Google Docs or Sheets. Requires the authenticated Google account to have write access.
+
+```python
+from notebooklm import ExportType
+
+# Export report to Google Docs
+result = await client.artifacts.export_report(
+    nb_id,
+    artifact_id="report_123",
+    title="My Briefing Doc",
+    export_type=ExportType.DOCS,
+)
+# result contains the Google Docs URL
+
+# Export data table to Google Sheets
+result = await client.artifacts.export_data_table(
+    nb_id,
+    artifact_id="table_456",
+    title="Research Data",
+)
+
+# Generic export
+result = await client.artifacts.export(
+    nb_id,
+    artifact_id="artifact_789",
+    title="Exported Content",
+    export_type=ExportType.SHEETS,
+)
+```
+
+**`ExportType` enum:**
+- `ExportType.DOCS` — Export to Google Docs
+- `ExportType.SHEETS` — Export to Google Sheets
+
+---
+
+## Complete generate → wait → download example
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient, AudioFormat
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb_id = "your_notebook_id"
+
+        # Generate
+        status = await client.artifacts.generate_audio(
+            nb_id,
+            audio_format=AudioFormat.DEEP_DIVE,
+            language="en",
+        )
+        print(f"Task: {status.task_id}")
+
+        # Wait
+        final = await client.artifacts.wait_for_completion(
+            nb_id, status.task_id, timeout=300, poll_interval=5
+        )
+
+        # Download
+        if final.is_complete:
+            path = await client.artifacts.download_audio(nb_id, "podcast.mp3")
+            print(f"Audio saved to: {path}")
+        else:
+            print(f"Failed: {final.status}")
+
+asyncio.run(main())
+```
+
+---
+
+## `Artifact` dataclass
+
+<ResponseField name="id" type="str">
+  Unique artifact identifier.
+</ResponseField>
+
+<ResponseField name="title" type="str">
+  Display title.
+</ResponseField>
+
+<ResponseField name="status" type="int">
+  Raw status code: `1`=processing, `2`=pending, `3`=completed.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Creation timestamp.
+</ResponseField>
+
+<ResponseField name="url" type="str | None">
+  Download or preview URL when available.
+</ResponseField>
+
+<ResponseField name="kind" type="ArtifactType">
+  Property returning an `ArtifactType` str-enum (`AUDIO`, `VIDEO`, `REPORT`, `QUIZ`, `FLASHCARDS`, `MIND_MAP`, `INFOGRAPHIC`, `SLIDE_DECK`, `DATA_TABLE`, `UNKNOWN`).
+</ResponseField>
+
+<ResponseField name="is_completed" type="bool">
+  Property: `True` when `status == 3`.
+</ResponseField>
+
+<ResponseField name="is_quiz" type="bool">
+  Property: `True` when the artifact is a quiz.
+</ResponseField>
+
+<ResponseField name="is_flashcards" type="bool">
+  Property: `True` when the artifact is a flashcard set.
+</ResponseField>

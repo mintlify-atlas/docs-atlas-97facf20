@@ -1,0 +1,248 @@
+---
+title: "ResearchAPI — web and Drive research agents"
+description: "Full reference for client.research: start AI-powered web or Drive research sessions, poll for results, and import discovered sources directly into a notebook."
+---
+
+`client.research` gives you programmatic access to NotebookLM's research agents. You start a research session with a natural-language query, poll until results are ready, and then selectively import the discovered web pages or Drive documents as notebook sources. The web agent supports both a fast mode and a deep-research mode for more thorough exploration.
+
+## Methods
+
+### `start(notebook_id, query, source, mode)`
+
+Starts a new research session and returns immediately with a task ID for polling.
+
+```python
+async def start(
+    notebook_id: str,
+    query: str,
+    source: str = "web",
+    mode: str = "fast",
+) -> dict
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID to associate research with.
+</ParamField>
+
+<ParamField path="query" type="str" required>
+  Natural language research question or topic.
+</ParamField>
+
+<ParamField path="source" type="str" default="web">
+  Data source to search. Valid values: `"web"` or `"drive"`.
+</ParamField>
+
+<ParamField path="mode" type="str" default="fast">
+  Research depth. `"fast"` for a quick search; `"deep"` for a thorough multi-step investigation. Deep mode is only available when `source="web"`.
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict with keys: `task_id` (str), `report_id` (str), `notebook_id` (str), `query` (str), `mode` (str).
+</ResponseField>
+
+**Raises:** `ValueError` when an invalid `source`/`mode` combination is used (e.g. `source="drive"` with `mode="deep"`).
+
+<Tabs>
+  <Tab title="Fast web research">
+    ```python
+    result = await client.research.start(nb_id, "AI safety regulations 2025")
+    task_id = result["task_id"]
+    ```
+  </Tab>
+  <Tab title="Deep web research">
+    ```python
+    result = await client.research.start(
+        nb_id,
+        "quantum computing hardware advances",
+        source="web",
+        mode="deep",
+    )
+    task_id = result["task_id"]
+    ```
+  </Tab>
+  <Tab title="Drive research">
+    ```python
+    # Drive research is always fast mode
+    result = await client.research.start(
+        nb_id,
+        "project documentation Q4",
+        source="drive",
+        mode="fast",
+    )
+    task_id = result["task_id"]
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Google Drive research is always performed in fast mode. Passing `mode="deep"` with `source="drive"` raises a `ValueError`.
+</Note>
+
+---
+
+### `poll(notebook_id)`
+
+Checks the status of the most recent research session for a notebook.
+
+```python
+async def poll(notebook_id: str) -> dict
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict with keys:
+  - `task_id` (str) — the research task ID
+  - `status` (str) — `"completed"`, `"in_progress"`, or `"no_research"`
+  - `query` (str) — the original query
+  - `sources` (list) — discovered sources, each a dict with `url` and `title`
+  - `summary` (str) — brief AI-generated summary of findings
+</ResponseField>
+
+```python
+import asyncio
+
+status = await client.research.poll(nb_id)
+print(status["status"])   # "in_progress" | "completed" | "no_research"
+print(status["summary"])
+for src in status["sources"]:
+    print(f"  {src['title']}: {src['url']}")
+```
+
+---
+
+### `import_sources(notebook_id, task_id, sources)`
+
+Imports a selection of sources discovered during a research session into the notebook.
+
+```python
+async def import_sources(
+    notebook_id: str,
+    task_id: str,
+    sources: list[dict],
+) -> list[dict]
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="task_id" type="str" required>
+  The `task_id` from `start()` or `poll()`.
+</ParamField>
+
+<ParamField path="sources" type="list[dict]" required>
+  List of source dicts to import. Each dict must have `url` (str) and `title` (str) keys — these come from the `sources` list returned by `poll()`.
+</ParamField>
+
+<ResponseField name="return" type="list[dict]">
+  List of imported source records, each containing `id` and `title`.
+</ResponseField>
+
+```python
+imported = await client.research.import_sources(
+    nb_id,
+    task_id,
+    status["sources"][:5],  # Import first 5 discovered sources
+)
+print(f"Imported {len(imported)} sources")
+for src in imported:
+    print(f"  {src['id']}: {src['title']}")
+```
+
+---
+
+## Polling loop example
+
+The most common pattern is to start research, poll in a loop, and import once complete:
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb_id = "your_notebook_id"
+
+        # Start research
+        result = await client.research.start(nb_id, "AI safety regulations")
+        task_id = result["task_id"]
+
+        # Poll until done
+        while True:
+            status = await client.research.poll(nb_id)
+            if status["status"] == "completed":
+                break
+            if status["status"] == "no_research":
+                print("No research session found")
+                return
+            print(f"Still researching... ({len(status.get('sources', []))} found so far)")
+            await asyncio.sleep(10)
+
+        print(f"Research complete: {status['summary']}")
+        print(f"Found {len(status['sources'])} sources")
+
+        # Import the top 5 results
+        imported = await client.research.import_sources(
+            nb_id, task_id, status["sources"][:5]
+        )
+        print(f"Imported {len(imported)} sources into notebook")
+
+asyncio.run(main())
+```
+
+---
+
+## Non-blocking pattern
+
+If you want to start research and do other work while it runs, use `asyncio.sleep()` inside a non-blocking loop:
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb_id = "your_notebook_id"
+
+        # Start research (returns immediately)
+        result = await client.research.start(nb_id, "climate policy 2025")
+        task_id = result["task_id"]
+
+        # Do other work while research runs
+        notebooks = await client.notebooks.list()
+        print(f"You have {len(notebooks)} notebooks")
+
+        # Check status later
+        status = await client.research.poll(nb_id)
+        while status["status"] == "in_progress":
+            await asyncio.sleep(15)
+            status = await client.research.poll(nb_id)
+
+        # Import findings
+        if status["status"] == "completed":
+            await client.research.import_sources(nb_id, task_id, status["sources"])
+
+asyncio.run(main())
+```
+
+---
+
+## Source and mode reference
+
+| `source` | Valid `mode` values | Notes |
+|---|---|---|
+| `"web"` | `"fast"` · `"deep"` | Default. Deep mode performs multi-step searching. |
+| `"drive"` | `"fast"` | Drive research always uses fast mode. |
+
+## `poll()` return structure
+
+| Field | Type | Description |
+|---|---|---|
+| `task_id` | str | Task identifier from `start()` |
+| `status` | str | `"completed"` · `"in_progress"` · `"no_research"` |
+| `query` | str | The original research query |
+| `sources` | list[dict] | Each dict has `url` and `title` |
+| `summary` | str | AI-generated summary of the research findings |

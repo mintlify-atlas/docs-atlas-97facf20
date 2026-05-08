@@ -1,0 +1,95 @@
+---
+title: "What is notebooklm-py?"
+description: "notebooklm-py is an unofficial Python SDK and CLI for Google NotebookLM with full programmatic access to features the web UI does not expose."
+---
+
+notebooklm-py gives you complete programmatic control over Google NotebookLM. You can create and manage notebooks, add sources from URLs, YouTube videos, PDFs, and Google Drive, chat with your content, run web and Drive research queries, and generate a full suite of AI content—all from Python code, the command line, or an AI agent. The library also includes a built-in skill file for Claude Code, Codex, and other LLM agents that speak the open skills protocol.
+
+<Warning>
+  notebooklm-py is not affiliated with Google. It uses undocumented internal APIs that can change without notice, and rate limits apply to heavy usage. It is best suited for prototypes, research automation, and personal projects.
+</Warning>
+
+## Three ways to use notebooklm-py
+
+You can drive the same underlying API from three distinct entry points, depending on your use case.
+
+<CardGroup cols={3}>
+  <Card title="Python API" icon="code" href="/guides/python-api">
+    An async Python client for application integration, custom pipelines, and automated workflows.
+  </Card>
+  <Card title="CLI" icon="terminal" href="/guides/cli">
+    Shell commands for scripting, quick one-off tasks, and CI/CD automation without writing Python.
+  </Card>
+  <Card title="Agent integration" icon="robot" href="/guides/agent-integration">
+    A bundled skill for Claude Code, Codex, and any agent that uses the open skills protocol.
+  </Card>
+</CardGroup>
+
+## Feature coverage
+
+The table below shows the categories of operations the library supports.
+
+| Category | Capabilities |
+|---|---|
+| **Notebooks** | Create, list, rename, delete |
+| **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, audio, video, images), Google Drive, pasted text; refresh; get guide and fulltext |
+| **Chat** | Questions, conversation history, custom personas |
+| **Research** | Web and Drive research agents (fast and deep modes) with auto-import |
+| **Sharing** | Public and private links, user permissions (viewer, editor), view level control |
+| **Content generation** | Audio Overview, Video Overview, Slide Deck, Infographic, Quiz, Flashcards, Report, Data Table, Mind Map |
+| **Downloads** | MP3, MP4, PDF, PPTX, PNG, CSV, JSON, Markdown |
+| **Export** | Google Docs and Google Sheets |
+
+### Content generation options
+
+Every NotebookLM Studio type is supported, with format and style control.
+
+| Type | Options | Download format |
+|---|---|---|
+| **Audio Overview** | 4 formats (deep-dive, brief, critique, debate), 3 lengths, 50+ languages | MP3, MP4 |
+| **Video Overview** | 3 formats (explainer, brief, cinematic), 9 visual styles | MP4 |
+| **Slide Deck** | Detailed or presenter format, adjustable length, per-slide revision | PDF, PPTX |
+| **Infographic** | 3 orientations, 3 detail levels | PNG |
+| **Quiz** | Configurable quantity and difficulty | JSON, Markdown, HTML |
+| **Flashcards** | Configurable quantity and difficulty | JSON, Markdown, HTML |
+| **Report** | Briefing doc, study guide, blog post, or custom prompt | Markdown |
+| **Data Table** | Custom structure via natural language | CSV |
+| **Mind Map** | Interactive hierarchical visualization | JSON |
+
+## Features beyond the web UI
+
+The following capabilities are available via notebooklm-py but are not exposed in the NotebookLM web interface:
+
+- **Batch downloads** — download all artifacts of a type at once
+- **Quiz and flashcard export** — get structured JSON, Markdown, or HTML instead of only the interactive view
+- **Mind map JSON extraction** — export the hierarchical tree for visualization tools
+- **Data table CSV export** — download structured tables as spreadsheets
+- **Slide deck as PPTX** — download editable PowerPoint files (the web UI only offers PDF)
+- **Slide revision** — modify individual slides with natural-language prompts
+- **Report template customization** — append extra instructions to built-in format templates
+- **Save chat to notes** — save answers or conversation history as notebook notes
+- **Source fulltext access** — retrieve the indexed text content of any source
+- **Programmatic sharing** — manage notebook permissions without the UI
+
+## Platform support
+
+| Platform | Status | Notes |
+|---|---|---|
+| **macOS** | Supported | Primary development platform |
+| **Linux** | Supported | Fully tested in CI |
+| **Windows** | Supported | Tested in CI |
+
+## Python version requirements
+
+notebooklm-py requires Python 3.10 or later. It is tested against Python 3.10, 3.11, 3.12, 3.13, and 3.14.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install notebooklm-py" icon="download" href="/installation">
+    Install from PyPI and set up browser login.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create a notebook, add sources, and generate a podcast in minutes.
+  </Card>
+</CardGroup>

@@ -1,0 +1,212 @@
+---
+title: "Python API guide for notebooklm-py"
+description: "Use the async Python client with context manager syntax to access notebooks, sources, artifacts, chat, research, notes, settings, and sharing APIs."
+---
+
+The `notebooklm` Python library exposes all of NotebookLM's features through a single async client. Every operation goes through `NotebookLMClient`, which manages HTTP sessions, authentication tokens, and automatic CSRF refresh under the hood. Because the client owns an async HTTP session, you must always open it as an async context manager—or call `__aenter__`/`__aexit__` explicitly.
+
+## Client initialization
+
+The recommended way to create a client is `NotebookLMClient.from_storage()`. This class method reads your saved browser session from disk (written by `notebooklm login`) and returns a ready-to-use client.
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+        print(f"Found {len(notebooks)} notebooks")
+
+asyncio.run(main())
+```
+
+<Note>
+  You must `await` the call to `from_storage()` and then use it as an `async with` context manager. Omitting either step leaves the HTTP session open or raises a runtime error.
+</Note>
+
+### Authentication profiles
+
+`from_storage()` accepts optional `path` and `profile` arguments so you can target a specific storage file or a named profile created with `notebooklm profile create`.
+
+```python
+# Default profile (reads ~/.notebooklm/profiles/default/storage_state.json)
+async with await NotebookLMClient.from_storage() as client:
+    ...
+
+# Named profile
+async with await NotebookLMClient.from_storage(profile="work") as client:
+    ...
+
+# Explicit path
+async with await NotebookLMClient.from_storage("/path/to/storage_state.json") as client:
+    ...
+```
+
+### Environment variable support
+
+The client respects the following environment variables, which is useful for CI/CD pipelines and container deployments.
+
+| Variable | Description |
+|---|---|
+| `NOTEBOOKLM_HOME` | Base directory for config files (default: `~/.notebooklm`) |
+| `NOTEBOOKLM_PROFILE` | Active profile name (default: `default`) |
+| `NOTEBOOKLM_AUTH_JSON` | Inline auth JSON string—no file needed (for CI/CD) |
+
+When `NOTEBOOKLM_AUTH_JSON` is set, `from_storage()` reads auth directly from the environment variable and never touches the filesystem, making it safe to use in ephemeral CI runners.
+
+## Available sub-APIs
+
+`NotebookLMClient` exposes eight sub-APIs as attributes. Each group is documented in its own reference page.
+
+<CardGroup cols={2}>
+  <Card title="notebooks" icon="book" href="/api/notebooks">
+    Create, list, rename, delete notebooks, and retrieve AI-generated summaries and metadata.
+  </Card>
+  <Card title="sources" icon="file-lines" href="/api/sources">
+    Add URLs, YouTube videos, files, Google Drive docs, and pasted text; get fulltext and guides.
+  </Card>
+  <Card title="artifacts" icon="wand-magic-sparkles" href="/api/artifacts">
+    Generate audio, video, quizzes, flashcards, reports, infographics, data tables, and mind maps; download and export results.
+  </Card>
+  <Card title="chat" icon="message" href="/api/chat">
+    Ask questions across sources, continue conversations, configure personas, and retrieve history.
+  </Card>
+  <Card title="research" icon="magnifying-glass" href="/api/research">
+    Start web or Drive research agents (fast or deep mode) and import discovered sources.
+  </Card>
+  <Card title="notes" icon="note-sticky" href="/api/notes">
+    Create, read, update, and delete text notes and mind-map notes within a notebook.
+  </Card>
+  <Card title="settings" icon="gear" href="/api/settings">
+    Read and set the global output language, and query account limits and subscription tier.
+  </Card>
+  <Card title="sharing" icon="share-nodes" href="/api/sharing">
+    Enable public links, control view levels, and manage per-user viewer/editor permissions.
+  </Card>
+</CardGroup>
+
+## Complete working example
+
+The example below shows the most common flow: creating a notebook, adding a source, chatting, and generating an audio overview. Run it end-to-end after authenticating with `notebooklm login`.
+
+<CodeGroup>
+```python Complete example
+import asyncio
+from notebooklm import NotebookLMClient, AudioFormat, AudioLength, RPCError
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        # Create a notebook
+        nb = await client.notebooks.create("AI Research")
+        print(f"Created notebook: {nb.id}")
+
+        # Add a web source and wait for indexing
+        source = await client.sources.add_url(
+            nb.id,
+            "https://en.wikipedia.org/wiki/Artificial_intelligence",
+        )
+        print(f"Added source: {source.id}")
+
+        # Ask a question
+        result = await client.chat.ask(nb.id, "What are the key themes?")
+        print(result.answer)
+
+        # Generate an audio overview
+        status = await client.artifacts.generate_audio(
+            nb.id,
+            audio_format=AudioFormat.DEEP_DIVE,
+            audio_length=AudioLength.DEFAULT,
+            instructions="Make it engaging and accessible",
+        )
+        print(f"Generation started: task_id={status.task_id}")
+
+        # Wait for it to finish
+        final = await client.artifacts.wait_for_completion(
+            nb.id, status.task_id, timeout=600, poll_interval=10
+        )
+
+        if final.is_complete:
+            path = await client.artifacts.download_audio(nb.id, "podcast.mp3")
+            print(f"Saved to: {path}")
+        else:
+            print(f"Generation did not complete: {final.status}")
+
+asyncio.run(main())
+```
+
+```python asyncio.run pattern
+# Use asyncio.run() to call async code from a synchronous script
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def run():
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+        for nb in notebooks:
+            print(f"{nb.id}: {nb.title} ({nb.sources_count} sources)")
+
+asyncio.run(run())
+```
+</CodeGroup>
+
+## Error handling
+
+The library raises specific exception types so you can handle different failure modes precisely. Import them from the top-level `notebooklm` package.
+
+```python
+from notebooklm import RPCError, AuthError, RateLimitError
+
+async with await NotebookLMClient.from_storage() as client:
+    try:
+        nb = await client.notebooks.create("Test")
+    except AuthError:
+        # Session cookies have expired—re-run notebooklm login
+        print("Authentication expired. Run: notebooklm login")
+    except RateLimitError:
+        # Google throttled the request—add a delay and retry
+        print("Rate limited. Wait a few minutes before retrying.")
+    except RPCError as e:
+        # Catch-all for other API failures
+        print(f"API error: {e}")
+```
+
+| Exception | When it fires |
+|---|---|
+| `AuthError` | Session cookies expired (HTTP 401/403) |
+| `RateLimitError` | Google rate-limit throttle |
+| `RPCError` | General API failure (base class for the above) |
+
+## Manual auth refresh
+
+The client automatically refreshes CSRF tokens when it detects an auth error. For long-running scripts, you can proactively refresh before a batch of operations to avoid mid-run failures.
+
+```python
+async with await NotebookLMClient.from_storage() as client:
+    # Proactively refresh before a long batch operation
+    await client.refresh_auth()
+
+    for title in my_titles:
+        await client.notebooks.create(title)
+```
+
+## Rate limiting best practices
+
+Google throttles aggressive API usage. When running batch operations, add short delays between calls to stay within limits.
+
+```python
+import asyncio
+from notebooklm import RPCError
+
+async def safe_batch(client, urls):
+    for url in urls:
+        try:
+            await client.sources.add_url(nb_id, url)
+        except RPCError:
+            await asyncio.sleep(10)
+            await client.sources.add_url(nb_id, url)
+        # Always pause between requests
+        await asyncio.sleep(2)
+```
+
+Use `--retry N` in the CLI (or the equivalent `wait_for_completion` with polling) for automatic exponential backoff when generating content.

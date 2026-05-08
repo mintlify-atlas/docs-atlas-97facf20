@@ -1,0 +1,468 @@
+---
+title: "Data types — Notebook, Source, Artifact, and more"
+description: "Reference for all dataclasses returned by the notebooklm-py Python API, including Notebook, Source, Artifact, AskResult, ShareStatus, and supporting types."
+---
+
+The notebooklm-py library returns typed dataclasses from every API call. All types are importable directly from the `notebooklm` package. Two special str enums—`SourceType` and `ArtifactType`—are returned by `.kind` properties and support both enum and string comparisons, making them easy to use in conditionals and f-strings without casting.
+
+## Notebook
+
+Represents a single NotebookLM notebook returned by `client.notebooks.list()`, `create()`, `get()`, and `rename()`.
+
+```python
+from notebooklm import Notebook
+
+notebooks = await client.notebooks.list()
+for nb in notebooks:
+    print(f"{nb.id}: {nb.title} ({nb.sources_count} sources)")
+```
+
+<ResponseField name="id" type="str" required>
+  Unique notebook identifier. Use this ID with all other API calls.
+</ResponseField>
+
+<ResponseField name="title" type="str" required>
+  Notebook title as shown in the NotebookLM UI.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Timestamp when the notebook was created. May be `None` for older notebooks.
+</ResponseField>
+
+<ResponseField name="sources_count" type="int">
+  Number of sources currently in the notebook. Defaults to `0`.
+</ResponseField>
+
+<ResponseField name="is_owner" type="bool">
+  `True` if the authenticated user owns this notebook. `False` for notebooks shared with the user.
+</ResponseField>
+
+---
+
+## Source
+
+Represents a single source inside a notebook. Returned by `client.sources.list()`, `get()`, `add_url()`, `add_text()`, and related methods.
+
+```python
+sources = await client.sources.list(nb_id)
+for src in sources:
+    print(f"{src.id}: {src.title} ({src.kind})")
+```
+
+<ResponseField name="id" type="str" required>
+  Unique source identifier within the notebook.
+</ResponseField>
+
+<ResponseField name="title" type="str | None">
+  Source title. May be the URL if the source has not finished processing yet.
+</ResponseField>
+
+<ResponseField name="url" type="str | None">
+  Original URL for web page and YouTube sources. `None` for uploaded files and pasted text.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Timestamp when the source was added.
+</ResponseField>
+
+<ResponseField name="kind" type="SourceType (property)">
+  Source type as a `SourceType` str enum. Supports both enum and string comparisons.
+
+  ```python
+  from notebooklm import SourceType
+
+  if source.kind == SourceType.PDF:
+      print("PDF source")
+
+  if source.kind == "web_page":   # string comparison also works
+      print("Web page source")
+  ```
+</ResponseField>
+
+<Note>
+  `SourceType` and `ArtifactType` are str enums, so `source.kind == "pdf"` and `source.kind == SourceType.PDF` are both `True`. You can also use them in f-strings: `f"Type: {source.kind}"` prints `"Type: pdf"`.
+</Note>
+
+---
+
+## Artifact
+
+Represents an AI-generated artifact such as an audio overview, video, report, quiz, or flashcard deck. Returned by `client.artifacts.list()`, `get()`, and generation methods.
+
+```python
+artifacts = await client.artifacts.list(nb_id)
+for art in artifacts:
+    if art.is_completed:
+        print(f"{art.title} ({art.kind})")
+```
+
+<ResponseField name="id" type="str" required>
+  Unique artifact identifier. This is the same value as `task_id` from `GenerationStatus`.
+</ResponseField>
+
+<ResponseField name="title" type="str" required>
+  Artifact title as assigned by NotebookLM.
+</ResponseField>
+
+<ResponseField name="status" type="int" required>
+  Numeric processing status. Use the boolean properties below instead of comparing integers directly.
+
+  | Value | Meaning |
+  |-------|---------|
+  | `1` | Processing (being generated) |
+  | `2` | Pending (queued) |
+  | `3` | Completed |
+  | `4` | Failed |
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Timestamp when the artifact was created.
+</ResponseField>
+
+<ResponseField name="url" type="str | None">
+  Download URL when the artifact is completed. `None` while generation is in progress.
+</ResponseField>
+
+<ResponseField name="kind" type="ArtifactType (property)">
+  Artifact type as an `ArtifactType` str enum.
+
+  ```python
+  from notebooklm import ArtifactType
+
+  if artifact.kind == ArtifactType.AUDIO:
+      path = await client.artifacts.download_audio(nb_id, "podcast.mp4")
+  ```
+</ResponseField>
+
+<ResponseField name="is_completed" type="bool (property)">
+  `True` when `status == 3` (completed). Use this to gate download calls.
+</ResponseField>
+
+<ResponseField name="is_quiz" type="bool (property)">
+  `True` when the artifact is a quiz. Quizzes and flashcards share the same internal type code; use this property rather than comparing `kind`.
+</ResponseField>
+
+<ResponseField name="is_flashcards" type="bool (property)">
+  `True` when the artifact is a flashcard deck.
+</ResponseField>
+
+---
+
+## AskResult
+
+Returned by `client.chat.ask()`. Contains the answer text, conversation context for follow-up questions, and a list of cited source passages.
+
+```python
+result = await client.chat.ask(nb_id, "What are the main themes?")
+print(result.answer)
+
+for ref in result.references:
+    print(f"Citation [{ref.citation_number}]: {ref.source_id}")
+```
+
+<ResponseField name="answer" type="str" required>
+  The AI-generated answer. Inline citations appear as `[1]`, `[2]`, etc., corresponding to entries in `references`.
+</ResponseField>
+
+<ResponseField name="conversation_id" type="str" required>
+  UUID identifying the current conversation. Pass this to subsequent `ask()` calls to continue the conversation.
+</ResponseField>
+
+<ResponseField name="turn_number" type="int" required>
+  Turn number within the conversation, starting at `1`.
+</ResponseField>
+
+<ResponseField name="is_follow_up" type="bool" required>
+  `True` when this question continued an existing conversation.
+</ResponseField>
+
+<ResponseField name="references" type="list[ChatReference]">
+  Source passages cited in the answer. See [ChatReference](#chatreference) below.
+</ResponseField>
+
+<ResponseField name="raw_response" type="str">
+  First 1,000 characters of the raw API response. Useful for debugging unexpected answers.
+</ResponseField>
+
+---
+
+## ChatReference
+
+A single source citation within an `AskResult`. References link inline citation markers such as `[1]` back to specific passages in source documents.
+
+<ResponseField name="source_id" type="str" required>
+  UUID of the source being cited. Use this with `client.sources.get_fulltext()` to retrieve source content.
+</ResponseField>
+
+<ResponseField name="citation_number" type="int | None">
+  The citation number displayed in the answer text (e.g., `1` for `[1]`).
+</ResponseField>
+
+<ResponseField name="cited_text" type="str | None">
+  The text passage from the source. Often a snippet or section header rather than the full quoted passage.
+</ResponseField>
+
+<ResponseField name="start_char" type="int | None">
+  Start position in NotebookLM's internal chunked index. This does **not** map directly to positions in the fulltext returned by `get_fulltext()`. Use `SourceFulltext.find_citation_context()` instead.
+</ResponseField>
+
+<ResponseField name="end_char" type="int | None">
+  End position in NotebookLM's internal chunked index.
+</ResponseField>
+
+<ResponseField name="chunk_id" type="str | None">
+  Internal chunk identifier. Useful for debugging; not intended for application logic.
+</ResponseField>
+
+---
+
+## GenerationStatus
+
+Returned immediately by all artifact generation methods (`generate_audio()`, `generate_video()`, etc.) and by `poll_status()`. Use `task_id` to poll or wait for completion.
+
+```python
+status = await client.artifacts.generate_audio(nb_id)
+print(f"Task: {status.task_id}, Status: {status.status}")
+
+final = await client.artifacts.wait_for_completion(nb_id, status.task_id)
+if final.is_complete:
+    await client.artifacts.download_audio(nb_id, "podcast.mp4")
+```
+
+<ResponseField name="task_id" type="str" required>
+  The generation task identifier. This becomes the artifact's `id` once generation completes.
+</ResponseField>
+
+<ResponseField name="status" type="str" required>
+  Current status string: `"pending"`, `"in_progress"`, `"completed"`, `"failed"`, or `"not_found"`.
+</ResponseField>
+
+<ResponseField name="is_complete" type="bool (property)">
+  `True` when `status == "completed"`.
+</ResponseField>
+
+<ResponseField name="url" type="str | None">
+  Download URL when status is `"completed"`.
+</ResponseField>
+
+<ResponseField name="error" type="str | None">
+  Error message when status is `"failed"`.
+</ResponseField>
+
+<ResponseField name="error_code" type="str | None">
+  Structured error code, e.g. `"USER_DISPLAYABLE_ERROR"` for rate-limit rejections.
+</ResponseField>
+
+---
+
+## Note
+
+Represents a user-created note in a notebook. Returned by `client.notes.list()`, `create()`, and `get()`. Notes are distinct from artifacts—they are user-written content, not AI-generated.
+
+<ResponseField name="id" type="str" required>
+  Unique note identifier.
+</ResponseField>
+
+<ResponseField name="title" type="str" required>
+  Note title.
+</ResponseField>
+
+<ResponseField name="content" type="str" required>
+  Note text content.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Timestamp when the note was created.
+</ResponseField>
+
+---
+
+## NotebookDescription
+
+Returned by `client.notebooks.get_description()`. Contains an AI-generated summary and a list of suggested follow-up questions.
+
+```python
+desc = await client.notebooks.get_description(nb_id)
+print(desc.summary)
+for topic in desc.suggested_topics:
+    print(f"  - {topic.question}")
+```
+
+<ResponseField name="summary" type="str" required>
+  AI-generated summary of the notebook's content.
+</ResponseField>
+
+<ResponseField name="suggested_topics" type="list[SuggestedTopic]">
+  List of suggested questions to ask about the notebook.
+
+  <Expandable title="SuggestedTopic fields">
+    <ResponseField name="question" type="str">
+      The suggested question text shown to the user.
+    </ResponseField>
+    <ResponseField name="prompt" type="str">
+      The underlying prompt used to generate this question.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## NotebookMetadata
+
+Returned by `client.notebooks.get_metadata()`. Composes a `Notebook` with a simplified source list, useful for exports and automation pipelines.
+
+<ResponseField name="notebook" type="Notebook">
+  The full `Notebook` object. Also accessible via shortcut properties `id`, `title`, `created_at`, and `is_owner`.
+</ResponseField>
+
+<ResponseField name="sources" type="list[SourceSummary]">
+  Simplified source list for metadata export. Each entry exposes `kind`, `title`, and `url`.
+</ResponseField>
+
+---
+
+## ShareStatus
+
+Returned by `client.sharing.get_status()`, `set_public()`, `add_user()`, `update_user()`, and `remove_user()`.
+
+<ResponseField name="notebook_id" type="str" required>
+  The notebook this sharing configuration belongs to.
+</ResponseField>
+
+<ResponseField name="is_public" type="bool" required>
+  `True` when the notebook is accessible to anyone with the share link.
+</ResponseField>
+
+<ResponseField name="access" type="ShareAccess" required>
+  `ShareAccess.RESTRICTED` or `ShareAccess.ANYONE_WITH_LINK`.
+</ResponseField>
+
+<ResponseField name="view_level" type="ShareViewLevel" required>
+  `ShareViewLevel.FULL_NOTEBOOK` (chat, sources, and notes) or `ShareViewLevel.CHAT_ONLY`.
+</ResponseField>
+
+<ResponseField name="shared_users" type="list[SharedUser]">
+  Users who have been explicitly granted access. See [SharedUser](#shareduser) below.
+</ResponseField>
+
+<ResponseField name="share_url" type="str | None">
+  Public share URL when `is_public` is `True`. `None` otherwise.
+</ResponseField>
+
+---
+
+## SharedUser
+
+A user who has been explicitly granted access to a notebook. Appears in `ShareStatus.shared_users`.
+
+<ResponseField name="email" type="str" required>
+  The user's Google account email address.
+</ResponseField>
+
+<ResponseField name="permission" type="SharePermission" required>
+  `SharePermission.OWNER`, `SharePermission.EDITOR`, or `SharePermission.VIEWER`.
+</ResponseField>
+
+<ResponseField name="display_name" type="str | None">
+  The user's display name, if available.
+</ResponseField>
+
+<ResponseField name="avatar_url" type="str | None">
+  URL to the user's profile picture, if available.
+</ResponseField>
+
+---
+
+## SourceFulltext
+
+Returned by `client.sources.get_fulltext()`. Contains the complete text content that NotebookLM has indexed for a source, along with a helper method for locating citation passages.
+
+```python
+fulltext = await client.sources.get_fulltext(nb_id, source_id)
+print(f"Content type: {fulltext.kind}")
+print(f"Length: {fulltext.char_count} chars")
+print(fulltext.content[:500])
+```
+
+<ResponseField name="source_id" type="str" required>
+  UUID of the source.
+</ResponseField>
+
+<ResponseField name="title" type="str" required>
+  Source title.
+</ResponseField>
+
+<ResponseField name="content" type="str" required>
+  The full indexed text content used by NotebookLM when answering questions.
+</ResponseField>
+
+<ResponseField name="url" type="str | None">
+  Original URL for web page and YouTube sources.
+</ResponseField>
+
+<ResponseField name="char_count" type="int">
+  Character count of `content`.
+</ResponseField>
+
+<ResponseField name="kind" type="SourceType (property)">
+  Source type as a `SourceType` str enum, identical to `Source.kind`.
+</ResponseField>
+
+### find_citation_context()
+
+Use this method to locate citation passages from `ChatReference.cited_text` within the full source content. The `start_char`/`end_char` fields on `ChatReference` reference NotebookLM's internal chunk index and do **not** map to positions in `content`—use this method instead.
+
+```python
+fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
+matches = fulltext.find_citation_context(ref.cited_text, context_chars=200)
+
+if matches:
+    context, position = matches[0]
+    if len(matches) > 1:
+        print(f"Warning: {len(matches)} matches found, using first")
+    print(context)
+else:
+    print("Citation not found in fulltext")
+```
+
+<ResponseField name="cited_text" type="str" required>
+  Text to search for, typically from `ChatReference.cited_text`.
+</ResponseField>
+
+<ResponseField name="context_chars" type="int">
+  Number of surrounding characters to include in each match. Defaults to `200`.
+</ResponseField>
+
+Returns `list[tuple[str, int]]`—a list of `(context, position)` tuples where `position` is the start of the match within `content`. Returns an empty list when no match is found.
+
+<Tip>
+  Cache `SourceFulltext` objects when processing multiple citations from the same source to avoid repeated API calls.
+</Tip>
+
+---
+
+## AccountLimits
+
+Returned by `client.settings.get_account_limits()`. Contains the server-reported quota limits for the authenticated account.
+
+<ResponseField name="notebook_limit" type="int | None">
+  Maximum number of notebooks the account can own.
+</ResponseField>
+
+<ResponseField name="source_limit" type="int | None">
+  Maximum number of sources per notebook.
+</ResponseField>
+
+---
+
+## AccountTier
+
+Returned by `client.settings.get_account_tier()`. Contains raw NotebookLM tier metadata.
+
+<ResponseField name="tier" type="str | None">
+  Internal tier identifier. Use `get_account_limits()` for quota decisions—the raw tier name may not match active limits.
+</ResponseField>
+
+<ResponseField name="plan_name" type="str | None">
+  Human-readable plan name, if available.
+</ResponseField>

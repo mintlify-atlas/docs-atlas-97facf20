@@ -1,0 +1,119 @@
+---
+title: "Integrate notebooklm-py with AI agents"
+description: "Install the notebooklm-py skill for Claude Code and other LLM agents using the CLI or npx, and apply best practices for parallel agent workflows."
+---
+
+notebooklm-py ships with a skill system that gives AI agents like Claude Code and Codex structured instructions for using the library. A skill is a `SKILL.md` file placed in a directory that the agent tool reads at startup. Once installed, the agent understands available commands, expected output formats, and recommended patterns—without you having to explain them each time.
+
+Codex-compatible environments read a different file (`AGENTS.md`) that lives at the repository root and is automatically discovered when an agent clones or opens the project.
+
+## Installing the skill for Claude Code
+
+You have two ways to install the skill. Both write the same `SKILL.md` content; choose the one that fits your workflow.
+
+<Steps>
+  <Step title="Install with the notebooklm CLI">
+    The `skill install` command copies the bundled skill file into the local agent skill directories managed by the CLI.
+
+    <CodeGroup>
+    ```bash CLI install
+    notebooklm skill install
+    ```
+
+    ```bash npx install
+    npx skills add teng-lin/notebooklm-py
+    ```
+    </CodeGroup>
+
+    `notebooklm skill install` targets both `~/.claude/skills/notebooklm/SKILL.md` and `~/.agents/skills/notebooklm/SKILL.md` by default (scope: user, target: all).
+  </Step>
+  <Step title="Check installation status">
+    Verify that the skill was installed correctly and review which targets are active.
+
+    ```bash
+    notebooklm skill status
+    ```
+
+    This shows the installed path, the version of the skill file, and whether the file matches the version bundled with the currently installed package.
+  </Step>
+  <Step title="View the bundled instructions">
+    You can inspect what the agent sees by printing the skill content directly.
+
+    ```bash
+    # Print the Claude Code skill template
+    notebooklm agent show claude
+
+    # Print the Codex guidance (prefers repo-root AGENTS.md in a checkout)
+    notebooklm agent show codex
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Codex does **not** use the `skill` subcommand. In a repository checkout it reads the root `AGENTS.md` file directly, which contains the same guidance in Codex-compatible format. You do not need to run `notebooklm skill install` for Codex—just ensure the Python package is installed and authentication is set up.
+</Note>
+
+## What the skill provides
+
+The skill file (`SKILL.md`) contains:
+
+- A list of all available `notebooklm` CLI commands with arguments and options
+- Recommended autonomy rules (which commands to run automatically vs. confirm first)
+- Common workflow patterns (research to podcast, document analysis, bulk import)
+- JSON output schemas for parsing command output programmatically
+- Error handling guidance and exit code meanings
+- Known limitations and rate-limit workarounds
+
+Once the skill is in place, Claude Code activates it automatically when the user asks for anything related to NotebookLM—for example, "create a podcast about quantum computing" or "generate flashcards from my PDFs."
+
+## Uninstalling
+
+To remove the skill from one or all targets:
+
+```bash
+notebooklm skill uninstall --target agents   # Remove from ~/.agents/skills/ only
+notebooklm skill uninstall                   # Remove all installed targets
+```
+
+## Best practices for agents using the CLI
+
+The following recommendations come directly from the CLI documentation and skill file, and apply to any agent driving the CLI programmatically.
+
+<Tip>
+  Pass `--json` on every command. It returns structured data that is easy to parse and avoids matching against styled terminal output.
+</Tip>
+
+**Notebook context:**
+- Use `notebooklm use <id>` only in single-agent sessions. In parallel workflows, pass `-n <id>` directly to each command so agents do not overwrite each other's context file.
+- Prefer full UUIDs over partial IDs in automation to avoid ambiguity.
+
+**Async generation:**
+- All `generate` commands except `mind-map` are asynchronous by default. They return a `task_id` immediately.
+- Do not use `--wait` in a main conversation loop—generation can take 5 to 45 minutes. Instead, use `artifact wait <id>` in a subagent.
+- `mind-map` is synchronous and completes instantly; no polling is needed.
+
+**Source management:**
+- `source add` auto-detects the content type from its argument (URL, YouTube URL, or file path).
+- For deep research, use `source add-research --mode deep --no-wait` and then `research wait --import-all` in a background task.
+
+**Partial IDs:**
+- Partial ID prefixes (six or more characters) work with `use`, `source delete`, `artifact wait`, and other ID-based commands.
+- For automated workflows, use full UUIDs to avoid prefix collisions.
+
+## Parallel agent isolation
+
+When multiple agents run concurrently on the same machine, they share the `~/.notebooklm/context.json` file. Use one of the following strategies to prevent context collisions:
+
+```bash
+# Strategy 1: Per-agent home directory (strongest isolation)
+export NOTEBOOKLM_HOME=/tmp/agent-$AGENT_ID
+
+# Strategy 2: Per-agent profile
+export NOTEBOOKLM_PROFILE=agent-$AGENT_ID
+
+# Strategy 3: Always pass explicit notebook IDs
+notebooklm artifact list -n <notebook_id> --json
+notebooklm download audio ./out.mp3 -n <notebook_id> -a <artifact_id>
+```
+
+The first strategy (unique `NOTEBOOKLM_HOME`) provides complete isolation including separate storage files and contexts.

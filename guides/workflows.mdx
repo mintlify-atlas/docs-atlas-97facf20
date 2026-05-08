@@ -1,0 +1,344 @@
+---
+title: "Common workflows with notebooklm-py"
+description: "End-to-end workflow patterns for research automation, content generation pipelines, CI/CD integration, and bulk source management using the CLI and Python API."
+---
+
+notebooklm-py is designed to be composed into repeatable pipelines. Each workflow below shows a complete end-to-end flow—from creating a notebook to downloading the final output—using the CLI, Python API, or both. The patterns scale from quick one-off tasks to fully automated CI/CD jobs.
+
+## Research → podcast (CLI, blocking)
+
+This workflow discovers sources on a topic using the deep research agent and then generates an audio overview. It is the simplest approach when you are running it interactively and can wait five to ten minutes.
+
+<Steps>
+  <Step title="Create and activate a notebook">
+    ```bash
+    notebooklm create "Climate Change Research"
+    notebooklm use <notebook_id>
+    ```
+  </Step>
+  <Step title="Add an initial source">
+    ```bash
+    notebooklm source add "https://en.wikipedia.org/wiki/Climate_change"
+    ```
+  </Step>
+  <Step title="Run deep research and auto-import sources">
+    The `--import-all` flag imports everything the research agent finds. Omit `--no-wait` here so the command blocks until research completes (up to five minutes).
+
+    ```bash
+    notebooklm source add-research "climate change policy 2024" --mode deep --import-all
+    ```
+  </Step>
+  <Step title="Generate and download the podcast">
+    ```bash
+    notebooklm generate audio "Focus on policy solutions and future outlook" \
+      --format debate --wait
+    notebooklm download audio ./climate-podcast.mp3
+    ```
+  </Step>
+</Steps>
+
+## Research → podcast (non-blocking, for agents)
+
+When an AI agent is driving the workflow, avoid blocking the main conversation with a long `--wait`. Instead, start research in a non-blocking way and handle completion in a subagent.
+
+<Note>
+  This pattern is preferred for LLM agents because deep research can take 15 to 30 minutes and would otherwise block the entire conversation.
+</Note>
+
+<Steps>
+  <Step title="Create the notebook and add a seed source">
+    ```bash
+    notebooklm create "Climate Change Research"
+    notebooklm use <notebook_id>
+    notebooklm source add "https://en.wikipedia.org/wiki/Climate_change"
+    ```
+  </Step>
+  <Step title="Start deep research without waiting">
+    ```bash
+    notebooklm source add-research "climate change policy 2024" --mode deep --no-wait
+    # Returns immediately with a status message
+    ```
+  </Step>
+  <Step title="Wait and import in a subagent">
+    Spawn a background agent with the following command. It blocks until research completes, then imports all discovered sources automatically.
+
+    ```bash
+    notebooklm research wait --import-all --timeout 1800 -n <notebook_id>
+    ```
+  </Step>
+  <Step title="Generate the podcast once sources are ready">
+    ```bash
+    notebooklm generate audio --format debate --json -n <notebook_id>
+    # Parse the task_id from JSON output, then wait in another subagent:
+    notebooklm artifact wait <task_id> -n <notebook_id> --timeout 1200
+    notebooklm download audio ./climate-podcast.mp3 -n <notebook_id>
+    ```
+  </Step>
+</Steps>
+
+## Document analysis → study materials
+
+Upload your PDFs, get a summary, then generate a full suite of study materials in parallel.
+
+<Steps>
+  <Step title="Create the notebook and upload documents">
+    <CodeGroup>
+    ```bash CLI
+    notebooklm create "Exam Prep"
+    notebooklm use <id>
+    notebooklm source add "./textbook-chapter.pdf"
+    notebooklm source add "./lecture-notes.pdf"
+    notebooklm summary
+    ```
+
+    ```python Python
+    import asyncio
+    from notebooklm import NotebookLMClient
+    from pathlib import Path
+
+    async def main():
+        async with await NotebookLMClient.from_storage() as client:
+            nb = await client.notebooks.create("Exam Prep")
+            await client.sources.add_file(nb.id, Path("./textbook-chapter.pdf"))
+            await client.sources.add_file(nb.id, Path("./lecture-notes.pdf"))
+            summary = await client.notebooks.get_summary(nb.id)
+            print(summary)
+
+    asyncio.run(main())
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Generate study materials">
+    <CodeGroup>
+    ```bash CLI
+    notebooklm generate quiz --difficulty hard --wait
+    notebooklm generate flashcards --wait
+    notebooklm generate report --format study-guide --wait
+    ```
+
+    ```python Python
+    from notebooklm import QuizDifficulty, ReportFormat
+
+    async with await NotebookLMClient.from_storage() as client:
+        quiz_status = await client.artifacts.generate_quiz(
+            nb.id, difficulty=QuizDifficulty.HARD
+        )
+        flash_status = await client.artifacts.generate_flashcards(nb.id)
+        report_status = await client.artifacts.generate_report(
+            nb.id, report_format=ReportFormat.STUDY_GUIDE
+        )
+
+        # Wait for all three
+        for status in [quiz_status, flash_status, report_status]:
+            await client.artifacts.wait_for_completion(nb.id, status.task_id, timeout=900)
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Download the results">
+    ```bash
+    notebooklm download quiz --format markdown quiz.md
+    notebooklm download flashcards cards.json
+    notebooklm download report ./study-guide.md
+    ```
+  </Step>
+</Steps>
+
+## YouTube → quick summary
+
+Turn a YouTube video into a briefing doc in under five minutes.
+
+<Steps>
+  <Step title="Create the notebook and add the video">
+    ```bash
+    notebooklm create "Video Notes"
+    notebooklm use <id>
+    notebooklm source add "https://www.youtube.com/watch?v=VIDEO_ID"
+    ```
+
+    `source add` detects the YouTube URL automatically and extracts the transcript.
+  </Step>
+  <Step title="Get a summary and ask questions">
+    ```bash
+    notebooklm summary
+    notebooklm ask "What are the main points?"
+    notebooklm ask "Create bullet point notes"
+    ```
+  </Step>
+  <Step title="Generate and download a briefing doc">
+    ```bash
+    notebooklm generate report --format briefing-doc --wait
+    notebooklm download report ./briefing.md
+    ```
+  </Step>
+</Steps>
+
+## Bulk import
+
+Add many sources to the same notebook from a list of URLs or a directory of files.
+
+<CodeGroup>
+```bash Multiple URLs
+notebooklm use <id>
+notebooklm source add "https://example.com/article1"
+notebooklm source add "https://example.com/article2"
+notebooklm source add "https://example.com/article3"
+```
+
+```bash Directory of PDFs
+notebooklm use <id>
+for f in ./papers/*.pdf; do
+  notebooklm source add "$f"
+done
+```
+
+```python Python loop
+import asyncio
+from pathlib import Path
+from notebooklm import NotebookLMClient
+
+urls = [
+    "https://example.com/article1",
+    "https://example.com/article2",
+    "https://example.com/article3",
+]
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb = await client.notebooks.create("Bulk Import")
+        for url in urls:
+            source = await client.sources.add_url(nb.id, url)
+            print(f"Added: {source.id}")
+            await asyncio.sleep(1)  # Small delay to avoid rate limits
+
+asyncio.run(main())
+```
+</CodeGroup>
+
+## Python: async research pipeline
+
+This complete Python example shows the full research-to-podcast pipeline: create a notebook, add sources, run research, wait for sources to index, then generate and download an audio overview.
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient, AudioFormat, AudioLength
+
+async def research_pipeline(topic: str, seed_url: str, output_path: str):
+    async with await NotebookLMClient.from_storage() as client:
+        # 1. Create notebook
+        nb = await client.notebooks.create(f"Research: {topic}")
+        print(f"Notebook: {nb.id}")
+
+        # 2. Add seed source
+        source = await client.sources.add_url(nb.id, seed_url)
+        print(f"Seed source: {source.id}")
+
+        # 3. Start deep web research (non-blocking)
+        research = await client.research.start(nb.id, topic, source="web", mode="deep")
+        task_id = research["task_id"]
+        print(f"Research started: {task_id}")
+
+        # 4. Poll until research completes
+        while True:
+            status = await client.research.poll(nb.id)
+            if status["status"] == "completed":
+                print(f"Research complete. Found {len(status['sources'])} sources.")
+                break
+            print(f"Research in progress… ({status['status']})")
+            await asyncio.sleep(15)
+
+        # 5. Import discovered sources
+        imported = await client.research.import_sources(
+            nb.id, task_id, status["sources"]
+        )
+        print(f"Imported {len(imported)} sources")
+
+        # 6. Chat with the sources
+        result = await client.chat.ask(nb.id, f"Summarize the key findings on {topic}")
+        print(result.answer[:500])
+
+        # 7. Generate a podcast
+        gen_status = await client.artifacts.generate_audio(
+            nb.id,
+            audio_format=AudioFormat.DEEP_DIVE,
+            audio_length=AudioLength.DEFAULT,
+        )
+        print(f"Generation task: {gen_status.task_id}")
+
+        # 8. Wait for completion
+        final = await client.artifacts.wait_for_completion(
+            nb.id, gen_status.task_id, timeout=1200, poll_interval=15
+        )
+
+        if final.is_complete:
+            path = await client.artifacts.download_audio(nb.id, output_path)
+            print(f"Podcast saved to: {path}")
+        else:
+            print(f"Generation did not complete in time: {final.status}")
+
+asyncio.run(research_pipeline(
+    topic="AI safety regulations",
+    seed_url="https://en.wikipedia.org/wiki/AI_safety",
+    output_path="./ai-safety-podcast.mp3",
+))
+```
+
+## CI/CD automation with GitHub Actions
+
+Store your `storage_state.json` as a GitHub Actions secret and use `NOTEBOOKLM_AUTH_JSON` to authenticate without writing files to disk.
+
+<Tip>
+  Use `--json` on every CLI command in CI/CD scripts so you can parse results with `jq` rather than matching terminal output.
+</Tip>
+
+```yaml
+# .github/workflows/weekly-podcast.yml
+name: Weekly Research Podcast
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 8am UTC
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install notebooklm-py
+        run: pip install notebooklm-py
+
+      - name: Create notebook and add sources
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        run: |
+          NB_ID=$(notebooklm create "Weekly Research" --json | jq -r .notebook.id)
+          echo "NB_ID=$NB_ID" >> $GITHUB_ENV
+          notebooklm source add "https://example.com/weekly-report" -n $NB_ID --json
+
+      - name: Generate podcast and wait
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        run: |
+          TASK_ID=$(notebooklm generate audio --json -n $NB_ID | jq -r .task_id)
+          notebooklm artifact wait $TASK_ID -n $NB_ID --timeout 1200
+
+      - name: Download podcast
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        run: |
+          notebooklm download audio ./weekly-podcast.mp3 -n $NB_ID
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-podcast
+          path: ./weekly-podcast.mp3
+```
+
+To set up `NOTEBOOKLM_AUTH_JSON`: run `notebooklm login` locally, then copy the contents of `~/.notebooklm/profiles/default/storage_state.json` into a repository secret named `NOTEBOOKLM_AUTH_JSON`.

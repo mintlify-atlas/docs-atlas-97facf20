@@ -1,133 +1,96 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "notebooklm-py: Python SDK for Google NotebookLM"
+description: "Unofficial Python SDK and CLI for Google NotebookLM. Generate podcasts, videos, quizzes, and more—including batch downloads and features not in the web UI."
 ---
 
-## Setting up
+notebooklm-py is an unofficial Python SDK and CLI that gives you complete programmatic control over Google NotebookLM. Create notebooks, add sources from URLs, YouTube, PDFs, and Google Drive, chat with your content, and generate Audio Overviews, videos, quizzes, flashcards, slide decks, infographics, and mind maps—all from Python or the command line. It also ships with a built-in skill for AI agents like Claude Code and Codex.
 
-Get your documentation site up and running in minutes.
+<Warning>
+  This library uses undocumented Google APIs that can change without notice. It is not affiliated with Google. Best for prototypes, research, and personal projects.
+</Warning>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install notebooklm-py from PyPI and set up browser login in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create a notebook, add sources, ask questions, and generate a podcast.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Python API" icon="python" href="/guides/python-api">
+    Use the async Python client to build research pipelines and automations.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CLI Reference" icon="terminal" href="/guides/cli">
+    Run NotebookLM operations from the shell or CI/CD pipelines.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Three ways to use notebooklm-py
 
-Everything you need to create world-class documentation.
+<CardGroup cols={3}>
+  <Card title="Python API" icon="code" href="/guides/python-api">
+    Async Python client for application integration and custom pipelines.
+  </Card>
+  <Card title="CLI" icon="terminal" href="/guides/cli">
+    Shell commands for scripting, quick tasks, and CI/CD automation.
+  </Card>
+  <Card title="Agent Integration" icon="robot" href="/guides/agent-integration">
+    Built-in skill for Claude Code, Codex, and other LLM agents.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## What you can build
 
-## Make your content agent ready
-
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
+<CardGroup cols={2}>
+  <Card title="Content generation" icon="wand-magic-sparkles" href="/guides/content-generation">
+    Generate podcasts, videos, slide decks, quizzes, flashcards, infographics, data tables, and mind maps.
   </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
+  <Card title="Research automation" icon="magnifying-glass" href="/guides/workflows">
+    Bulk-import sources, run web/Drive research queries, and extract insights programmatically.
   </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
+  <Card title="Downloads & export" icon="file-export" href="/guides/content-generation">
+    Download all artifacts locally (MP3, MP4, PDF, PNG, CSV, JSON, Markdown) or export to Google Docs/Sheets.
   </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
+  <Card title="API reference" icon="book" href="/api/client">
+    Explore the full Python client API with all method signatures and parameters.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Features beyond the web UI
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+notebooklm-py unlocks capabilities not available in the NotebookLM web interface:
+
+- **Batch downloads** — download all artifacts of a type at once
+- **Quiz and flashcard export** — get structured JSON, Markdown, or HTML
+- **Mind map JSON extraction** — export hierarchical data for visualization tools
+- **Slide deck as PPTX** — download editable PowerPoint files
+- **Slide revision** — modify individual slides with natural-language prompts
+- **Source fulltext access** — retrieve the indexed text of any source
+- **Programmatic sharing** — manage permissions without the UI
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    pip install "notebooklm-py[browser]"
+    playwright install chromium
+    ```
+  </Step>
+  <Step title="Authenticate">
+    ```bash
+    notebooklm login
+    ```
+    Opens a browser window — log in with your Google account, then press Enter.
+  </Step>
+  <Step title="Create a notebook and add sources">
+    ```bash
+    notebooklm create "My Research"
+    notebooklm use <notebook_id>
+    notebooklm source add "https://en.wikipedia.org/wiki/Artificial_intelligence"
+    ```
+  </Step>
+  <Step title="Generate and download content">
+    ```bash
+    notebooklm generate audio --wait
+    notebooklm download audio ./podcast.mp3
+    ```
+  </Step>
+</Steps>

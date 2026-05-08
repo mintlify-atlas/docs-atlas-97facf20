@@ -1,81 +1,257 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Get started with notebooklm-py"
+description: "Go from a fresh install to a working notebook in minutes. This guide covers authentication, adding sources, chatting, and generating a podcast."
 ---
 
-## Get started in three steps
+This page walks you through the complete end-to-end flow: install the package, log in with your Google account, create a notebook, add sources, ask questions, generate an Audio Overview, and download the result. Each step shows the CLI command and the equivalent Python API call side by side.
 
-Get your documentation site running locally and make your first customization.
+## Before you begin
 
-### Step 1: Set up your local environment
+Install notebooklm-py with browser support if you have not done so already. See [Install notebooklm-py](/installation) for platform-specific instructions.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+```bash
+pip install "notebooklm-py[browser]"
+playwright install chromium
+```
 
-### Step 2: Deploy your changes
+## End-to-end flow
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Steps>
+  <Step title="Authenticate">
+    The first thing you need to do is log in with your Google account. notebooklm-py opens a Chromium browser window and saves your session cookies to `~/.notebooklm/profiles/default/storage_state.json`.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    <Tabs>
+      <Tab title="CLI">
+        ```bash
+        notebooklm login
+        ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+        Log in with your Google account in the browser window that opens, then return to the terminal and press Enter to save the session.
 
-### Step 3: Go live
+        For organizations that require Microsoft Edge for SSO:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+        ```bash
+        notebooklm login --browser msedge
+        ```
+      </Tab>
+      <Tab title="Python API">
+        Authentication for the Python API is handled by loading the saved session from the file written by `notebooklm login`. You do not call a login method directly.
+
+        ```python
+        from notebooklm import NotebookLMClient
+
+        # Loads credentials from ~/.notebooklm/profiles/default/storage_state.json
+        async with await NotebookLMClient.from_storage() as client:
+            ...
+        ```
+
+        Run `notebooklm login` from the CLI first, then use `NotebookLMClient.from_storage()` in your Python code.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Create a notebook">
+    Create a new notebook to hold your sources and generated content.
+
+    <Tabs>
+      <Tab title="CLI">
+        ```bash
+        notebooklm create "My Research"
+        ```
+
+        The command prints the new notebook ID. Set it as the active notebook so you do not need to pass it to every subsequent command:
+
+        ```bash
+        notebooklm use <notebook_id>
+        ```
+      </Tab>
+      <Tab title="Python API">
+        ```python
+        import asyncio
+        from notebooklm import NotebookLMClient
+
+        async def main():
+            async with await NotebookLMClient.from_storage() as client:
+                nb = await client.notebooks.create("My Research")
+                print(f"Created notebook: {nb.id}")
+
+        asyncio.run(main())
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Add sources">
+    Add sources from URLs, YouTube videos, and local files. NotebookLM indexes the content before you can chat with it.
+
+    <Tabs>
+      <Tab title="CLI">
+        ```bash
+        # Add a web page
+        notebooklm source add "https://en.wikipedia.org/wiki/Artificial_intelligence"
+
+        # Add a YouTube video
+        notebooklm source add "https://www.youtube.com/watch?v=example"
+
+        # Add a local PDF
+        notebooklm source add "./paper.pdf"
+        ```
+      </Tab>
+      <Tab title="Python API">
+        ```python
+        from pathlib import Path
+
+        async with await NotebookLMClient.from_storage() as client:
+            # Add a web page
+            await client.sources.add_url(nb.id, "https://en.wikipedia.org/wiki/Artificial_intelligence", wait=True)
+
+            # Add a YouTube video
+            await client.sources.add_youtube(nb.id, "https://www.youtube.com/watch?v=example")
+
+            # Add a local PDF
+            await client.sources.add_file(nb.id, Path("./paper.pdf"))
+        ```
+
+        Pass `wait=True` to block until NotebookLM finishes indexing the source.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Chat with your sources">
+    Ask questions about the content you added. Answers include inline citations that reference specific sources.
+
+    <Tabs>
+      <Tab title="CLI">
+        ```bash
+        notebooklm ask "What are the key themes?"
+        ```
+      </Tab>
+      <Tab title="Python API">
+        ```python
+        async with await NotebookLMClient.from_storage() as client:
+            result = await client.chat.ask(nb.id, "What are the key themes?")
+            print(result.answer)
+
+            # Continue the conversation
+            follow_up = await client.chat.ask(
+                nb.id,
+                "Can you elaborate on the first point?",
+                conversation_id=result.conversation_id
+            )
+            print(follow_up.answer)
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Generate an Audio Overview">
+    Generate a podcast-style Audio Overview from your sources. Generation is asynchronous—use `--wait` on the CLI or `wait_for_completion()` in Python to block until it finishes.
+
+    <Tabs>
+      <Tab title="CLI">
+        ```bash
+        notebooklm generate audio "make it engaging" --wait
+        ```
+      </Tab>
+      <Tab title="Python API">
+        ```python
+        async with await NotebookLMClient.from_storage() as client:
+            status = await client.artifacts.generate_audio(nb.id, instructions="make it fun")
+            await client.artifacts.wait_for_completion(nb.id, status.task_id)
+        ```
+      </Tab>
+    </Tabs>
+
+    <Tip>
+      Always use `--wait` for generation commands on the CLI. Without it the command returns immediately after submitting the task, and the artifact may not be ready to download yet. In Python, call `wait_for_completion()` before downloading.
+    </Tip>
+  </Step>
+
+  <Step title="Download the artifact">
+    After generation completes, download the artifact to a local file.
+
+    <Tabs>
+      <Tab title="CLI">
+        ```bash
+        notebooklm download audio ./podcast.mp3
+        ```
+
+        Other download examples:
+
+        ```bash
+        notebooklm download video ./overview.mp4
+        notebooklm download quiz --format markdown ./quiz.md
+        notebooklm download flashcards --format json ./cards.json
+        notebooklm download slide-deck ./slides.pdf
+        notebooklm download infographic ./infographic.png
+        notebooklm download mind-map ./mindmap.json
+        notebooklm download data-table ./data.csv
+        ```
+      </Tab>
+      <Tab title="Python API">
+        ```python
+        async with await NotebookLMClient.from_storage() as client:
+            await client.artifacts.download_audio(nb.id, "podcast.mp3")
+
+            # Download a quiz as JSON
+            await client.artifacts.download_quiz(nb.id, "quiz.json", output_format="json")
+
+            # Download a mind map
+            await client.artifacts.download_mind_map(nb.id, "mindmap.json")
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Full Python example
+
+The following script combines all steps above into a single runnable program.
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        # Create notebook and add sources
+        nb = await client.notebooks.create("Research")
+        await client.sources.add_url(nb.id, "https://example.com", wait=True)
+
+        # Chat with your sources
+        result = await client.chat.ask(nb.id, "Summarize this")
+        print(result.answer)
+
+        # Generate an Audio Overview and download it
+        status = await client.artifacts.generate_audio(nb.id, instructions="make it fun")
+        await client.artifacts.wait_for_completion(nb.id, status.task_id)
+        await client.artifacts.download_audio(nb.id, "podcast.mp3")
+
+        # Generate a quiz and download as JSON
+        status = await client.artifacts.generate_quiz(nb.id)
+        await client.artifacts.wait_for_completion(nb.id, status.task_id)
+        await client.artifacts.download_quiz(nb.id, "quiz.json", output_format="json")
+
+        # Generate a mind map and export
+        result = await client.artifacts.generate_mind_map(nb.id)
+        await client.artifacts.download_mind_map(nb.id, "mindmap.json")
+
+asyncio.run(main())
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Authentication" icon="key" href="/authentication">
+    Learn how sessions are stored, how to use profiles for multiple accounts, and how to authenticate in CI/CD.
+  </Card>
+  <Card title="Python API guide" icon="code" href="/guides/python-api">
+    Explore the full async Python client with all available methods.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/guides/cli">
+    See all CLI commands with options and examples.
+  </Card>
+  <Card title="Content generation" icon="wand-magic-sparkles" href="/guides/content-generation">
+    Generate all NotebookLM Studio content types with format and style control.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

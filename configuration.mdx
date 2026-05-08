@@ -1,0 +1,301 @@
+---
+title: "Configure notebooklm-py storage, profiles, and auth"
+description: "Manage file locations, environment variables, named profiles, and CI/CD authentication setup for notebooklm-py across all platforms."
+---
+
+notebooklm-py stores all authentication and session data under `~/.notebooklm/` by default, organized into named profiles. You can relocate this directory, select a different profile per-command, or bypass the filesystem entirely for CI/CD using environment variables.
+
+## File locations
+
+All data lives under `~/.notebooklm/`, with each profile getting its own subdirectory:
+
+```
+~/.notebooklm/
+├── active_profile            # Tracks the current profile name
+├── profiles/
+│   ├── default/              # Default profile (auto-created)
+│   │   ├── storage_state.json    # Authentication cookies and session
+│   │   ├── context.json          # CLI context (active notebook, conversation)
+│   │   └── browser_profile/      # Persistent Chromium profile
+│   ├── work/
+│   │   ├── storage_state.json
+│   │   ├── context.json
+│   │   └── browser_profile/
+│   └── personal/
+│       └── ...
+```
+
+<Note>
+If you're upgrading from a pre-profile version, the first run automatically migrates flat files into `profiles/default/`. The legacy flat layout continues to work as a fallback.
+</Note>
+
+**`storage_state.json`** contains the authentication cookies extracted from your browser session, including the required cookies `SID`, `HSID`, `SSID`, `APISID`, `SAPISID`, `__Secure-1PSID`, and `__Secure-3PSID`.
+
+**`context.json`** stores the active notebook and conversation IDs used by the CLI. It is managed automatically by `notebooklm use` and `notebooklm clear`.
+
+**`browser_profile/`** is a persistent Chromium user data directory used only during `notebooklm login`. The persistence makes the browser appear as a regular user installation, which helps avoid bot detection. To reset it, delete the `browser_profile/` directory and run `notebooklm login` again.
+
+## Environment variables
+
+You can override every configuration aspect using environment variables. The full set is listed below:
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTEBOOKLM_HOME` | `~/.notebooklm` | Base directory for all configuration files |
+| `NOTEBOOKLM_PROFILE` | `default` | Active profile name |
+| `NOTEBOOKLM_AUTH_JSON` | — | Inline authentication JSON; ideal for CI/CD |
+| `NOTEBOOKLM_LOG_LEVEL` | `WARNING` | Logging level: `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+| `NOTEBOOKLM_DEBUG_RPC` | `false` | Legacy: enable RPC debug logging (use `NOTEBOOKLM_LOG_LEVEL=DEBUG` instead) |
+
+### NOTEBOOKLM_HOME
+
+Use `NOTEBOOKLM_HOME` to relocate all configuration files to a custom directory. This is useful for per-project isolation or containerized environments:
+
+```bash
+export NOTEBOOKLM_HOME=/custom/path
+
+# All files now go here:
+# /custom/path/profiles/<profile>/storage_state.json
+# /custom/path/profiles/<profile>/context.json
+# /custom/path/profiles/<profile>/browser_profile/
+```
+
+### NOTEBOOKLM_PROFILE
+
+Use `NOTEBOOKLM_PROFILE` to select a profile for the current shell session without changing the persisted active profile:
+
+```bash
+export NOTEBOOKLM_PROFILE=work
+notebooklm list   # Uses ~/.notebooklm/profiles/work/
+```
+
+This is equivalent to passing `-p work` on every command. The `-p` CLI flag takes precedence over the environment variable.
+
+### NOTEBOOKLM_AUTH_JSON
+
+Use `NOTEBOOKLM_AUTH_JSON` to provide authentication inline without writing any files to disk. This is the recommended approach for CI/CD:
+
+```bash
+export NOTEBOOKLM_AUTH_JSON='{"cookies":[...]}'
+notebooklm list  # Works without any file on disk
+```
+
+Authentication sources are resolved in this order of precedence:
+
+1. `--storage` CLI flag (highest priority)
+2. `NOTEBOOKLM_AUTH_JSON` environment variable
+3. Profile-aware path: `$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json`
+4. `~/.notebooklm/profiles/default/storage_state.json` (default)
+5. `~/.notebooklm/storage_state.json` (legacy fallback)
+
+<Note>
+You cannot run `notebooklm login` when `NOTEBOOKLM_AUTH_JSON` is set.
+</Note>
+
+## CLI global options
+
+Every notebooklm command accepts these global options:
+
+| Option | Default | Description |
+|---|---|---|
+| `--storage PATH` | Profile storage path | Path to a specific `storage_state.json` |
+| `-p, --profile NAME` | Active profile or `default` | Use a named profile for this command |
+| `-v, --verbose` | — | Enable verbose output |
+| `--version` | — | Show the installed version |
+| `--help` | — | Show help |
+
+### Viewing configuration paths
+
+To see exactly which files notebooklm is reading from, run:
+
+```bash
+notebooklm status --paths
+```
+
+This produces a table showing the resolved path and source for each configuration file:
+
+```
+                Configuration Paths
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ File            ┃ Path                                     ┃ Source    ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Profile         │ default                                  │ active    │
+│ Home Directory  │ /home/user/.notebooklm                   │ default   │
+│ Storage State   │ .../profiles/default/storage_state.json  │           │
+│ Context         │ .../profiles/default/context.json        │           │
+│ Browser Profile │ .../profiles/default/browser_profile     │           │
+└─────────────────┴──────────────────────────────────────────┴───────────┘
+```
+
+The **Source** column tells you whether each setting came from an environment variable, a CLI flag, or the default.
+
+## Session management
+
+### Session lifetime
+
+Sessions are tied to Google's cookie expiration. In practice, sessions last several days to weeks, though Google may invalidate them earlier due to security events or suspicious activity patterns.
+
+### Automatic CSRF token refresh
+
+The client automatically refreshes CSRF tokens and session IDs when authentication errors are detected. When an RPC call fails with an auth error, the client fetches a fresh CSRF token from the NotebookLM homepage and retries the request once. Concurrent requests share a single refresh task to prevent token thrashing.
+
+This means most "session expired" errors resolve transparently without any action on your part.
+
+### Manual re-authentication
+
+If your underlying session cookies have fully expired (beyond what automatic refresh can handle), re-authenticate:
+
+```bash
+notebooklm login
+```
+
+## Multiple accounts with profiles
+
+Profiles let you manage multiple Google accounts under a single home directory. Each profile stores its own `storage_state.json`, `context.json`, and `browser_profile/`.
+
+<Steps>
+  <Step title="Create and authenticate a profile">
+    ```bash
+    notebooklm profile create work
+    notebooklm -p work login
+    notebooklm -p work list
+    ```
+  </Step>
+  <Step title="Create a second profile">
+    ```bash
+    notebooklm profile create personal
+    notebooklm -p personal login
+    notebooklm -p personal list
+    ```
+  </Step>
+  <Step title="Switch the active profile">
+    ```bash
+    notebooklm profile switch work
+    notebooklm list   # Uses work profile
+    ```
+  </Step>
+  <Step title="Manage profiles">
+    ```bash
+    # List all profiles
+    notebooklm profile list
+
+    # Use env var for a session-wide override
+    export NOTEBOOKLM_PROFILE=personal
+    notebooklm list   # Uses personal profile
+    ```
+  </Step>
+</Steps>
+
+You can also use `NOTEBOOKLM_HOME` for full directory-level isolation between accounts:
+
+```bash
+export NOTEBOOKLM_HOME=~/.notebooklm-work
+notebooklm login
+```
+
+Or override the storage file for a single command:
+
+```bash
+notebooklm --storage /path/to/account.json list
+```
+
+## CI/CD configuration
+
+### GitHub Actions
+
+The recommended approach for CI/CD is to pass your authentication as a secret via `NOTEBOOKLM_AUTH_JSON`. No files are written to disk, and the secret stays in memory only.
+
+<CodeGroup>
+
+```yaml GitHub Actions (recommended)
+jobs:
+  notebook-task:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install notebooklm-py
+        run: pip install notebooklm-py
+
+      - name: List notebooks
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        run: notebooklm list
+```
+
+```yaml File-based auth (alternative)
+- name: Setup NotebookLM auth
+  run: |
+    mkdir -p ~/.notebooklm/profiles/default
+    echo "${{ secrets.NOTEBOOKLM_AUTH_JSON }}" > ~/.notebooklm/profiles/default/storage_state.json
+    chmod 600 ~/.notebooklm/profiles/default/storage_state.json
+
+- name: List notebooks
+  run: notebooklm list
+```
+
+</CodeGroup>
+
+To obtain the secret value, run `notebooklm login` locally, copy the contents of `~/.notebooklm/profiles/default/storage_state.json`, and add it as a GitHub repository secret named `NOTEBOOKLM_AUTH_JSON`.
+
+### Session expiration in long-running pipelines
+
+CSRF tokens are automatically refreshed during API calls, but the underlying session cookies still expire every one to two weeks. For long-running pipelines, update the `NOTEBOOKLM_AUTH_JSON` secret regularly and monitor for persistent authentication failures, which indicate that the cookies themselves have expired.
+
+## Platform notes
+
+notebooklm-py supports macOS, Linux, Windows, and WSL. The only platform-specific setup requirement involves Playwright, which is needed only for `notebooklm login`. All other operations use standard HTTP via `httpx`.
+
+**macOS** works out of the box. Chromium is downloaded automatically by Playwright.
+
+**Linux** requires installing Playwright's system dependencies before running login:
+
+```bash
+playwright install-deps chromium
+playwright install chromium
+```
+
+**Windows** works with PowerShell or CMD. Use backslashes for paths or set `NOTEBOOKLM_HOME` using PowerShell syntax:
+
+```powershell
+notebooklm --storage C:\Users\Name\.notebooklm\storage_state.json list
+
+# Or use the environment variable
+$env:NOTEBOOKLM_HOME = "C:\Users\Name\custom-notebooklm"
+notebooklm list
+```
+
+**WSL** opens the browser in the Windows host. The storage file is saved in the WSL filesystem.
+
+**Headless servers and containers** can run all commands except `notebooklm login` without Playwright installed. Copy a valid `storage_state.json` from a machine with a display, or use `NOTEBOOKLM_AUTH_JSON`:
+
+```bash
+pip install notebooklm-py
+
+export NOTEBOOKLM_AUTH_JSON='{"cookies": [...]}'
+
+# All commands work except 'login'
+notebooklm list
+notebooklm ask "Summarize the sources"
+```
+
+## Health checks and debugging
+
+Run `notebooklm doctor` to check that your installation is healthy and your authentication is valid.
+
+To enable detailed logging, set `NOTEBOOKLM_LOG_LEVEL=DEBUG` before any command:
+
+```bash
+NOTEBOOKLM_LOG_LEVEL=DEBUG notebooklm list
+```
+
+To see raw RPC method IDs in the output (useful when diagnosing API breakage), set `NOTEBOOKLM_DEBUG_RPC=1`:
+
+```bash
+NOTEBOOKLM_DEBUG_RPC=1 notebooklm list
+```

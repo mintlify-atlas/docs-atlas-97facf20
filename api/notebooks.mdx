@@ -1,0 +1,375 @@
+---
+title: "NotebooksAPI — manage notebooks"
+description: "Full reference for client.notebooks: create, list, rename, delete, and describe notebooks, plus sharing helpers and raw metadata access."
+---
+
+`client.notebooks` gives you complete CRUD control over your NotebookLM notebooks. Every method is a coroutine — you must `await` it inside an `async` function. Notebooks are identified by a string `notebook_id` that you receive when you create or list them. The API also exposes AI-generated descriptions and flexible sharing helpers to build publishing workflows.
+
+## Methods
+
+### `list()`
+
+Returns all notebooks accessible to the authenticated account.
+
+```python
+async def list() -> list[Notebook]
+```
+
+<ResponseField name="return" type="list[Notebook]">
+  List of `Notebook` objects, each containing `id`, `title`, `created_at`, `sources_count`, and `is_owner`.
+</ResponseField>
+
+```python
+notebooks = await client.notebooks.list()
+for nb in notebooks:
+    print(f"{nb.id}: {nb.title} ({nb.sources_count} sources)")
+```
+
+---
+
+### `create(title)`
+
+Creates a new notebook with the given title.
+
+```python
+async def create(title: str) -> Notebook
+```
+
+<ParamField path="title" type="str" required>
+  Display title for the new notebook.
+</ParamField>
+
+<ResponseField name="return" type="Notebook">
+  The newly created `Notebook` object.
+</ResponseField>
+
+**Raises:** `NotebookLimitError` when you have reached the account's maximum notebook count.
+
+```python
+nb = await client.notebooks.create("My Research Project")
+print(f"Created: {nb.id}")
+```
+
+---
+
+### `get(notebook_id)`
+
+Fetches details for a single notebook.
+
+```python
+async def get(notebook_id: str) -> Notebook
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The ID of the notebook to retrieve.
+</ParamField>
+
+<ResponseField name="return" type="Notebook">
+  `Notebook` object with current metadata.
+</ResponseField>
+
+```python
+nb = await client.notebooks.get("notebook_abc123")
+print(nb.title)
+```
+
+---
+
+### `delete(notebook_id)`
+
+Permanently deletes a notebook and all its sources, notes, and artifacts.
+
+```python
+async def delete(notebook_id: str) -> bool
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The ID of the notebook to delete.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` when deletion succeeds. Raises `RPCError` on failure.
+</ResponseField>
+
+```python
+deleted = await client.notebooks.delete(nb.id)
+```
+
+---
+
+### `rename(notebook_id, new_title)`
+
+Renames a notebook. Fetches and returns the updated notebook after the rename.
+
+```python
+async def rename(notebook_id: str, new_title: str) -> Notebook
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The ID of the notebook to rename.
+</ParamField>
+
+<ParamField path="new_title" type="str" required>
+  The replacement title.
+</ParamField>
+
+<ResponseField name="return" type="Notebook">
+  The updated `Notebook` object with the new title.
+</ResponseField>
+
+```python
+nb = await client.notebooks.create("Draft")
+nb = await client.notebooks.rename(nb.id, "Final Version")
+print(nb.title)  # "Final Version"
+```
+
+---
+
+### `get_description(notebook_id)`
+
+Returns an AI-generated summary and list of suggested questions for the notebook. This is the parsed form of the summary shown in the Chat panel when you open a notebook.
+
+```python
+async def get_description(notebook_id: str) -> NotebookDescription
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID to summarize.
+</ParamField>
+
+<ResponseField name="return" type="NotebookDescription">
+  Object with `summary` (str) and `suggested_topics` (list of `SuggestedTopic`). Each `SuggestedTopic` has `question` and `prompt` string fields.
+</ResponseField>
+
+```python
+desc = await client.notebooks.get_description(nb.id)
+print(desc.summary)
+for topic in desc.suggested_topics:
+    print(f"  - {topic.question}")
+```
+
+---
+
+### `get_summary(notebook_id)`
+
+Returns the raw summary text without parsing it into topics. Use `get_description()` when you need the structured form with suggested questions.
+
+```python
+async def get_summary(notebook_id: str) -> str
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Raw summary text string. Empty string if no summary is available yet.
+</ResponseField>
+
+<Info>
+  **`get_summary` vs `get_description`:** `get_summary()` returns a plain string; `get_description()` returns a `NotebookDescription` with the same text plus a list of `SuggestedTopic` objects for suggested follow-up questions.
+</Info>
+
+```python
+summary = await client.notebooks.get_summary(nb.id)
+print(summary)
+```
+
+---
+
+### `get_metadata(notebook_id)`
+
+Fetches notebook details and its source list concurrently, returning a combined object useful for exports and audits.
+
+```python
+async def get_metadata(notebook_id: str) -> NotebookMetadata
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="NotebookMetadata">
+  Object with a `notebook` field (`Notebook`) and a `sources` field (`list[SourceSummary]`). `SourceSummary` has `kind`, `title`, and `url`.
+</ResponseField>
+
+```python
+metadata = await client.notebooks.get_metadata(nb.id)
+print(f"Notebook: {metadata.notebook.title}")
+print(f"Sources: {len(metadata.sources)}")
+
+import json
+print(json.dumps(metadata.to_dict(), indent=2))
+```
+
+---
+
+### `share(notebook_id, public, artifact_id)`
+
+Enables or disables public link sharing for a notebook. When `artifact_id` is provided, the returned URL deep-links to that artifact.
+
+<Warning>
+  For full user-permission management (adding editors, viewers by email), use `client.sharing` instead.
+</Warning>
+
+```python
+async def share(
+    notebook_id: str,
+    public: bool = True,
+    artifact_id: str | None = None,
+) -> dict
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="public" type="bool" default="True">
+  `True` to enable sharing; `False` to disable.
+</ParamField>
+
+<ParamField path="artifact_id" type="str | None" default="None">
+  Optional artifact ID to embed in the share URL as `?artifactId=...`.
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict with keys `public` (bool), `url` (str or None), and `artifact_id` (str or None).
+</ResponseField>
+
+```python
+result = await client.notebooks.share(nb.id, public=True)
+print(result["url"])
+
+# Deep-link to a specific artifact
+result = await client.notebooks.share(nb.id, public=True, artifact_id="audio_xyz")
+print(result["url"])  # https://notebooklm.google.com/notebook/<id>?artifactId=audio_xyz
+```
+
+---
+
+### `get_share_url(notebook_id, artifact_id)`
+
+Returns the share URL format without toggling sharing state. Call `share()` first to enable sharing.
+
+```python
+def get_share_url(
+    notebook_id: str,
+    artifact_id: str | None = None,
+) -> str
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="artifact_id" type="str | None" default="None">
+  Optional artifact ID for a deep-link URL.
+</ParamField>
+
+<ResponseField name="return" type="str">
+  URL string of the form `https://notebooklm.google.com/notebook/<id>` (or with `?artifactId=...` appended).
+</ResponseField>
+
+```python
+await client.notebooks.share(nb.id, public=True)
+url = client.notebooks.get_share_url(nb.id)
+print(url)
+```
+
+---
+
+### `remove_from_recent(notebook_id)`
+
+Removes the notebook from the account's recently viewed list without deleting it.
+
+```python
+async def remove_from_recent(notebook_id: str) -> None
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID to remove from recents.
+</ParamField>
+
+```python
+await client.notebooks.remove_from_recent(nb.id)
+```
+
+---
+
+### `get_raw(notebook_id)`
+
+Returns the raw API response for a notebook. Use this to access data that is not yet surfaced by the typed `Notebook` dataclass.
+
+```python
+async def get_raw(notebook_id: str) -> Any
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="Any">
+  Unprocessed list structure from the NotebookLM RPC response.
+</ResponseField>
+
+```python
+raw = await client.notebooks.get_raw(nb.id)
+# Inspect structure for debugging or accessing unlisted fields
+import json
+print(json.dumps(raw, indent=2, default=str))
+```
+
+---
+
+## Complete example
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        # List all notebooks
+        notebooks = await client.notebooks.list()
+        for nb in notebooks:
+            print(f"{nb.id}: {nb.title} ({nb.sources_count} sources)")
+
+        # Create and rename
+        nb = await client.notebooks.create("Draft")
+        nb = await client.notebooks.rename(nb.id, "Final Version")
+
+        # Get AI-generated description with suggested topics
+        desc = await client.notebooks.get_description(nb.id)
+        print(desc.summary)
+        for topic in desc.suggested_topics:
+            print(f"  - {topic.question}")
+
+        # Enable public sharing and get the URL
+        await client.notebooks.share(nb.id, public=True)
+        url = client.notebooks.get_share_url(nb.id)
+        print(url)
+
+asyncio.run(main())
+```
+
+## `Notebook` dataclass
+
+<ResponseField name="id" type="str">
+  Unique notebook identifier.
+</ResponseField>
+
+<ResponseField name="title" type="str">
+  Display title of the notebook.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Creation timestamp, or `None` if unavailable.
+</ResponseField>
+
+<ResponseField name="sources_count" type="int">
+  Number of sources currently in the notebook.
+</ResponseField>
+
+<ResponseField name="is_owner" type="bool">
+  `True` when the authenticated user owns this notebook.
+</ResponseField>

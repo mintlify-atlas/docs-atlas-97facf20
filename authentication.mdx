@@ -1,0 +1,257 @@
+---
+title: "Authenticate with notebooklm-py"
+description: "notebooklm-py authenticates using Google session cookies captured via browser login, stored in storage_state.json and loaded automatically."
+---
+
+notebooklm-py does not use an API key. Instead, it captures your Google session cookies from a real browser login and stores them in a local file called `storage_state.json`. Every subsequent CLI command or Python API call loads those cookies automatically and uses them to authenticate requests to NotebookLM. CSRF tokens and session IDs are fetched from the NotebookLM homepage on startup and refreshed automatically when authentication errors are detected.
+
+<Warning>
+  Google session cookies typically expire after a few days to a few weeks. When they expire, automatic CSRF token refresh will not help—you need to run `notebooklm login` again to capture fresh cookies.
+</Warning>
+
+## Initial login
+
+Run `notebooklm login` once to capture your Google session. This is the only step that requires a browser.
+
+<Steps>
+  <Step title="Install the browser extra">
+    The `notebooklm login` command requires Playwright. Install it if you have not already:
+
+    ```bash
+    pip install "notebooklm-py[browser]"
+    playwright install chromium
+    ```
+  </Step>
+
+  <Step title="Run the login command">
+    ```bash
+    notebooklm login
+    ```
+
+    A Chromium browser window opens. Log in with your Google account, complete any two-factor authentication, and wait until you reach the NotebookLM home page.
+
+    For organizations that require Microsoft Edge for SSO authentication:
+
+    ```bash
+    notebooklm login --browser msedge
+    ```
+  </Step>
+
+  <Step title="Confirm the session was saved">
+    After you press Enter in the terminal, notebooklm-py saves your session to disk. Verify it works:
+
+    ```bash
+    notebooklm list
+    ```
+
+    A successful response lists your notebooks (or an empty list if you have none).
+  </Step>
+</Steps>
+
+## Where credentials are stored
+
+notebooklm-py stores all files under `~/.notebooklm/`, organized by profile:
+
+```
+~/.notebooklm/
+├── active_profile               # Tracks the current profile name
+└── profiles/
+    └── default/
+        ├── storage_state.json   # Authentication cookies and session
+        ├── context.json         # CLI context (active notebook, conversation)
+        └── browser_profile/     # Persistent Chromium profile
+```
+
+### Storage state format
+
+`storage_state.json` uses the Playwright storage state format. It contains a list of cookies that notebooklm-py extracts and sends with every API request.
+
+```json
+{
+  "cookies": [
+    {
+      "name": "SID",
+      "value": "...",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1234567890,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}
+```
+
+**Required cookies:** `SID`, `HSID`, `SSID`, `APISID`, `SAPISID`, `__Secure-1PSID`, `__Secure-3PSID`
+
+If any of these are missing, notebooklm-py raises a `ValueError` and asks you to re-run `notebooklm login`.
+
+## Environment variables
+
+You can control where notebooklm-py looks for credentials and which profile it uses through environment variables.
+
+| Variable | Description | Default |
+|---|---|---|
+| `NOTEBOOKLM_HOME` | Base directory for all files | `~/.notebooklm` |
+| `NOTEBOOKLM_PROFILE` | Active profile name | `default` |
+| `NOTEBOOKLM_AUTH_JSON` | Inline authentication JSON (no file needed) | — |
+| `NOTEBOOKLM_LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `WARNING` |
+
+### Auth precedence
+
+When the client resolves credentials, it checks sources in this order (highest priority first):
+
+1. Explicit `--storage` CLI flag or `path` argument to `NotebookLMClient.from_storage()`
+2. `NOTEBOOKLM_AUTH_JSON` environment variable
+3. Explicit `profile` argument to `NotebookLMClient.from_storage(profile="work")`
+4. `NOTEBOOKLM_PROFILE` environment variable (resolves to `~/.notebooklm/profiles/<name>/storage_state.json`)
+5. Active profile from `~/.notebooklm/active_profile`
+6. `~/.notebooklm/profiles/default/storage_state.json`
+7. `~/.notebooklm/storage_state.json` (legacy fallback)
+
+## Python API authentication
+
+The Python client loads credentials using `NotebookLMClient.from_storage()`. Call it as part of an async context manager to ensure HTTP connections are properly closed.
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    # Load from default profile
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+
+asyncio.run(main())
+```
+
+You can also specify a profile or a custom path:
+
+```python
+# Load from a named profile
+async with await NotebookLMClient.from_storage(profile="work") as client:
+    ...
+
+# Load from an explicit file path
+async with await NotebookLMClient.from_storage("/path/to/storage_state.json") as client:
+    ...
+```
+
+### Using AuthTokens directly
+
+For lower-level control, construct `AuthTokens` with specific cookie values:
+
+```python
+from notebooklm import AuthTokens, NotebookLMClient
+
+auth = AuthTokens(
+    cookies={"SID": "...", "HSID": "...", "SSID": "...", "APISID": "...", "SAPISID": "..."},
+    csrf_token="...",
+    session_id="..."
+)
+client = NotebookLMClient(auth)
+```
+
+`AuthTokens` also supports profiles:
+
+```python
+auth = AuthTokens.from_storage(profile="work")
+```
+
+<Note>
+  The client automatically refreshes CSRF tokens when authentication errors are detected. When an RPC call fails with an auth error, the client fetches fresh tokens from the NotebookLM homepage and retries the request—you do not need to handle this manually. If the underlying session cookies have fully expired, you must re-run `notebooklm login`.
+</Note>
+
+## CI/CD authentication
+
+In CI/CD environments you cannot run `notebooklm login` interactively. Use the `NOTEBOOKLM_AUTH_JSON` environment variable to supply the JSON contents of `storage_state.json` as an inline secret—no files are written to disk.
+
+### Obtaining the secret value
+
+1. Run `notebooklm login` on your local machine.
+2. Read the contents of `~/.notebooklm/profiles/default/storage_state.json`.
+3. Store the entire JSON string as a repository secret named `NOTEBOOKLM_AUTH_JSON`.
+
+### GitHub Actions example
+
+```yaml
+jobs:
+  notebook-task:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install notebooklm-py
+        run: pip install notebooklm-py
+
+      - name: List notebooks
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        run: notebooklm list
+```
+
+You can also use `NOTEBOOKLM_AUTH_JSON` from Python:
+
+```python
+import os
+import asyncio
+from notebooklm import NotebookLMClient
+
+# Auth JSON is read automatically from the environment variable
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+
+asyncio.run(main())
+```
+
+<Warning>
+  Update the `NOTEBOOKLM_AUTH_JSON` secret every one to two weeks for long-running CI pipelines. CSRF tokens refresh automatically, but the underlying session cookies still expire on Google's schedule.
+</Warning>
+
+## Multiple accounts and profiles
+
+Use named profiles to manage multiple Google accounts under a single home directory.
+
+```bash
+# Create and authenticate a work profile
+notebooklm profile create work
+notebooklm -p work login
+notebooklm -p work list
+
+# Create and authenticate a personal profile
+notebooklm profile create personal
+notebooklm -p personal login
+notebooklm -p personal list
+
+# Switch the active profile
+notebooklm profile switch work
+notebooklm list   # Uses the work profile
+
+# Use an environment variable for a session-wide override
+export NOTEBOOKLM_PROFILE=personal
+notebooklm list   # Uses the personal profile
+```
+
+Each profile stores its own `storage_state.json`, `context.json`, and `browser_profile/` under `~/.notebooklm/profiles/<name>/`.
+
+## Re-authentication
+
+When your session expires, `notebooklm list` returns an authentication error. Re-authenticate by running login again:
+
+```bash
+notebooklm login
+```
+
+To diagnose authentication issues, use the auth check command:
+
+```bash
+notebooklm auth check --test
+```

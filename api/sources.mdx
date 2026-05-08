@@ -1,0 +1,516 @@
+---
+title: "SourcesAPI — manage notebook sources"
+description: "Full reference for client.sources: add URLs, files, pasted text, and Google Drive documents; list, rename, refresh, delete, and retrieve fulltext or AI guides."
+---
+
+`client.sources` lets you populate notebooks with content from anywhere — web pages, YouTube videos, local files, plain text, or Google Drive documents. Every source is identified by a `source_id` string scoped to a specific notebook. You can read the full indexed text of any source, get an AI-generated summary and keyword guide, and check whether a URL-based source needs refreshing.
+
+## Supported source types
+
+| `SourceType` | Description |
+|---|---|
+| `WEB_PAGE` | Any public web URL |
+| `YOUTUBE` | YouTube video (transcript indexed) |
+| `PDF` | PDF file uploaded locally |
+| `MARKDOWN` / `DOCX` / `CSV` / `EPUB` | Document file types |
+| `PASTED_TEXT` | Inline text content |
+| `GOOGLE_DOCS` / `GOOGLE_SLIDES` / `GOOGLE_SPREADSHEET` | Google Drive native formats |
+| `GOOGLE_DRIVE_AUDIO` / `GOOGLE_DRIVE_VIDEO` | Audio/video files in Drive |
+| `IMAGE` | Image file (OCR'd) |
+| `MEDIA` | Other audio or video file |
+
+## Methods
+
+### `list(notebook_id)`
+
+Returns all sources in a notebook.
+
+```python
+async def list(notebook_id: str) -> list[Source]
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="list[Source]">
+  List of `Source` objects ordered by creation time.
+</ResponseField>
+
+```python
+sources = await client.sources.list(nb_id)
+for src in sources:
+    print(f"{src.id}: {src.title} ({src.kind})")
+```
+
+---
+
+### `get(notebook_id, source_id)`
+
+Returns a single source by ID, or `None` if not found.
+
+```python
+async def get(notebook_id: str, source_id: str) -> Source | None
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID to retrieve.
+</ParamField>
+
+<ResponseField name="return" type="Source | None">
+  `Source` object with current status, or `None` if the source does not exist.
+</ResponseField>
+
+```python
+src = await client.sources.get(nb_id, "src_001")
+if src:
+    print(f"Status: {src.status}")
+```
+
+---
+
+### `get_fulltext(notebook_id, source_id)`
+
+Returns the full text that NotebookLM has indexed from a source. This is exactly the content used for chat answers and artifact generation.
+
+```python
+async def get_fulltext(notebook_id: str, source_id: str) -> SourceFulltext
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID.
+</ParamField>
+
+<ResponseField name="return" type="SourceFulltext">
+  Object with fields: `source_id`, `title`, `content` (full indexed text), `url` (original URL or `None`), `char_count`, and a `kind` property returning a `SourceType` enum.
+</ResponseField>
+
+**Raises:** `SourceNotFoundError` if the source does not exist or returns no data.
+
+```python
+fulltext = await client.sources.get_fulltext(nb_id, src.id)
+print(f"Content ({fulltext.char_count} chars): {fulltext.content[:500]}...")
+```
+
+Use `SourceFulltext.find_citation_context()` to locate chat citations inside the fulltext:
+
+```python
+matches = fulltext.find_citation_context(ref.cited_text)
+if matches:
+    context, position = matches[0]
+    print(context)
+```
+
+---
+
+### `get_guide(notebook_id, source_id)`
+
+Returns the AI-generated Source Guide — a markdown summary with **bold** keywords and a flat list of topic keywords. This mirrors the guide shown in the NotebookLM sidebar when you click a source.
+
+```python
+async def get_guide(notebook_id: str, source_id: str) -> dict
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID.
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict with `summary` (str, markdown with **bold** keywords) and `keywords` (list of str).
+</ResponseField>
+
+```python
+guide = await client.sources.get_guide(nb_id, src.id)
+print(f"Summary: {guide['summary']}")
+print(f"Keywords: {guide['keywords']}")
+```
+
+---
+
+### `add_url(notebook_id, url, wait, wait_timeout)`
+
+Adds a public web URL as a source. YouTube URLs are detected automatically and routed through the YouTube ingestion path.
+
+```python
+async def add_url(
+    notebook_id: str,
+    url: str,
+    wait: bool = False,
+    wait_timeout: float = 120.0,
+) -> Source
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  The public URL to add.
+</ParamField>
+
+<ParamField path="wait" type="bool" default="false">
+  When `True`, blocks until the source finishes processing (status becomes `READY` or `ERROR`).
+</ParamField>
+
+<ParamField path="wait_timeout" type="float" default="120.0">
+  Maximum seconds to wait when `wait=True`.
+</ParamField>
+
+<ResponseField name="return" type="Source">
+  The created `Source` object. If `wait=False`, `status` may still be `PROCESSING`.
+</ResponseField>
+
+**Raises:** `SourceAddError` on API failure. `SourceTimeoutError` if `wait=True` and timeout is reached.
+
+```python
+# Add immediately (non-blocking)
+src = await client.sources.add_url(nb_id, "https://example.com/article")
+
+# Add and wait for processing
+src = await client.sources.add_url(nb_id, "https://example.com/article", wait=True)
+print(src.status)  # READY
+```
+
+---
+
+<Note>
+  **YouTube URLs**: You do not need a separate method for YouTube. Pass any YouTube URL (`youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/shorts/...`) to `add_url()` and it automatically routes through the YouTube ingestion path, indexing the video transcript.
+
+  ```python
+  src = await client.sources.add_url(nb_id, "https://youtube.com/watch?v=dQw4w9WgXcQ")
+  ```
+</Note>
+
+---
+
+### `add_text(notebook_id, title, content, wait, wait_timeout)`
+
+Adds a plain-text string directly as a source (equivalent to "Paste text" in the UI).
+
+```python
+async def add_text(
+    notebook_id: str,
+    title: str,
+    content: str,
+    wait: bool = False,
+    wait_timeout: float = 120.0,
+) -> Source
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="title" type="str" required>
+  Display title for this source.
+</ParamField>
+
+<ParamField path="content" type="str" required>
+  The text content to index.
+</ParamField>
+
+<ParamField path="wait" type="bool" default="false">
+  Block until the source is ready.
+</ParamField>
+
+<ParamField path="wait_timeout" type="float" default="120.0">
+  Maximum seconds to wait when `wait=True`.
+</ParamField>
+
+<ResponseField name="return" type="Source">
+  The created `Source` object.
+</ResponseField>
+
+```python
+src = await client.sources.add_text(nb_id, "Meeting Notes", "Key points:\n- ...")
+```
+
+---
+
+### `add_file(notebook_id, path, mime_type, wait, wait_timeout)`
+
+Uploads a local file using Google's resumable upload protocol. Files are streamed in 64 KB chunks so large documents don't exhaust memory.
+
+```python
+async def add_file(
+    notebook_id: str,
+    file_path: str | Path,
+    mime_type: str | None = None,
+    wait: bool = False,
+    wait_timeout: float = 120.0,
+) -> Source
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="file_path" type="str | Path" required>
+  Path to the local file. Supported formats: PDF, TXT, Markdown, EPUB, DOCX, CSV, audio, video, and image files.
+</ParamField>
+
+<ParamField path="mime_type" type="str | None" default="None">
+  MIME type hint. Currently unused by the upload implementation; the API infers type from content.
+</ParamField>
+
+<ParamField path="wait" type="bool" default="false">
+  Block until processing is complete.
+</ParamField>
+
+<ParamField path="wait_timeout" type="float" default="120.0">
+  Maximum seconds to wait when `wait=True`.
+</ParamField>
+
+<ResponseField name="return" type="Source">
+  The created `Source` object. The `kind` property reflects the actual type only after processing completes.
+</ResponseField>
+
+```python
+from pathlib import Path
+
+src = await client.sources.add_file(nb_id, Path("./report.pdf"), wait=True)
+print(src.kind)  # SourceType.PDF
+```
+
+---
+
+### `add_drive(notebook_id, file_id, title, mime_type, wait, wait_timeout)`
+
+Adds a Google Drive document as a source using the Drive file ID.
+
+```python
+async def add_drive(
+    notebook_id: str,
+    file_id: str,
+    title: str,
+    mime_type: str = "application/vnd.google-apps.document",
+    wait: bool = False,
+    wait_timeout: float = 120.0,
+) -> Source
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="file_id" type="str" required>
+  The Google Drive file ID (found in the file's URL).
+</ParamField>
+
+<ParamField path="title" type="str" required>
+  Display title for the source.
+</ParamField>
+
+<ParamField path="mime_type" type="str" default="application/vnd.google-apps.document">
+  MIME type of the Drive file. Use `DriveMimeType` enum values for convenience.
+</ParamField>
+
+<ParamField path="wait" type="bool" default="false">
+  Block until processing is complete.
+</ParamField>
+
+<ParamField path="wait_timeout" type="float" default="120.0">
+  Maximum seconds to wait when `wait=True`.
+</ParamField>
+
+<ResponseField name="return" type="Source">
+  The created `Source` object.
+</ResponseField>
+
+```python
+from notebooklm import DriveMimeType
+
+src = await client.sources.add_drive(
+    nb_id,
+    file_id="1abc123xyz",
+    title="Q4 Strategy Doc",
+    mime_type=DriveMimeType.GOOGLE_DOC.value,
+    wait=True,
+)
+```
+
+---
+
+### `rename(notebook_id, source_id, new_title)`
+
+Renames a source.
+
+```python
+async def rename(notebook_id: str, source_id: str, new_title: str) -> Source
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID to rename.
+</ParamField>
+
+<ParamField path="new_title" type="str" required>
+  The new display title.
+</ParamField>
+
+<ResponseField name="return" type="Source">
+  Updated `Source` object.
+</ResponseField>
+
+```python
+src = await client.sources.rename(nb_id, src.id, "Better Title")
+```
+
+---
+
+### `refresh(notebook_id, source_id)`
+
+Re-fetches content from a URL or Drive source to pick up changes since it was originally added.
+
+```python
+async def refresh(notebook_id: str, source_id: str) -> bool
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID to refresh.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` when the refresh was successfully initiated.
+</ResponseField>
+
+```python
+await client.sources.refresh(nb_id, src.id)
+```
+
+---
+
+### `check_freshness(notebook_id, source_id)`
+
+Checks whether a source's remote content has changed since it was last indexed.
+
+```python
+async def check_freshness(notebook_id: str, source_id: str) -> bool
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID to check.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` if the source is up to date; `False` if it needs refreshing.
+</ResponseField>
+
+```python
+is_fresh = await client.sources.check_freshness(nb_id, src.id)
+if not is_fresh:
+    await client.sources.refresh(nb_id, src.id)
+```
+
+---
+
+### `delete(notebook_id, source_id)`
+
+Permanently removes a source from a notebook.
+
+```python
+async def delete(notebook_id: str, source_id: str) -> bool
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="source_id" type="str" required>
+  The source ID to delete.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` when deletion succeeds.
+</ResponseField>
+
+```python
+await client.sources.delete(nb_id, src.id)
+```
+
+---
+
+## Complete example
+
+```python
+import asyncio
+from pathlib import Path
+from notebooklm import NotebookLMClient, SourceType
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb = await client.notebooks.create("Research")
+        nb_id = nb.id
+
+        # Add various source types
+        await client.sources.add_url(nb_id, "https://example.com/article")
+        await client.sources.add_url(nb_id, "https://youtube.com/watch?v=...")
+        await client.sources.add_text(nb_id, "My Notes", "Content here...")
+        await client.sources.add_file(nb_id, Path("./document.pdf"))
+
+        # List and inspect
+        sources = await client.sources.list(nb_id)
+        for src in sources:
+            print(f"{src.id}: {src.title} ({src.kind})")
+
+        # Get full indexed text
+        fulltext = await client.sources.get_fulltext(nb_id, sources[0].id)
+        print(f"Content ({fulltext.char_count} chars): {fulltext.content[:500]}...")
+
+        # Get AI-generated guide
+        guide = await client.sources.get_guide(nb_id, sources[0].id)
+        print(f"Summary: {guide['summary']}")
+        print(f"Keywords: {guide['keywords']}")
+
+        # Check freshness and refresh if needed
+        is_fresh = await client.sources.check_freshness(nb_id, sources[0].id)
+        if not is_fresh:
+            await client.sources.refresh(nb_id, sources[0].id)
+
+asyncio.run(main())
+```
+
+## `Source` dataclass
+
+<ResponseField name="id" type="str">
+  Unique source identifier within the notebook.
+</ResponseField>
+
+<ResponseField name="title" type="str | None">
+  Display title, or `None` for untitled sources.
+</ResponseField>
+
+<ResponseField name="url" type="str | None">
+  Original URL for web and Drive sources, or `None` for uploaded files and text.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime | None">
+  Creation timestamp.
+</ResponseField>
+
+<ResponseField name="kind" type="SourceType">
+  Property returning a `SourceType` str-enum. Supports both enum and string comparison: `src.kind == SourceType.PDF` and `src.kind == "pdf"` are both valid.
+</ResponseField>

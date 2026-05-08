@@ -1,0 +1,361 @@
+---
+title: "ChatAPI — ask questions and manage conversations"
+description: "Full reference for client.chat: ask questions with citations, continue multi-turn conversations, filter by source, configure personas, and retrieve history."
+---
+
+`client.chat` lets you interact with a notebook's indexed content through natural language. Each call to `ask()` returns a typed `AskResult` that includes the answer text, inline citation markers, and a list of `ChatReference` objects pointing back to specific passages in your sources. You can continue any conversation across multiple turns by passing the `conversation_id` returned from the previous call.
+
+## Methods
+
+### `ask(notebook_id, question, source_ids, conversation_id)`
+
+Asks a question against the notebook and returns an answer with source citations.
+
+```python
+async def ask(
+    notebook_id: str,
+    question: str,
+    source_ids: list[str] | None = None,
+    conversation_id: str | None = None,
+) -> AskResult
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID to query.
+</ParamField>
+
+<ParamField path="question" type="str" required>
+  The question to ask. Phrased as natural language.
+</ParamField>
+
+<ParamField path="source_ids" type="list[str] | None" default="None">
+  Restrict the answer to specific sources. `None` uses all sources in the notebook.
+</ParamField>
+
+<ParamField path="conversation_id" type="str | None" default="None">
+  Pass the `conversation_id` from a previous `AskResult` to continue that conversation. Each follow-up builds on prior context.
+</ParamField>
+
+<ResponseField name="return" type="AskResult">
+  Typed result containing the answer, conversation metadata, and citation references.
+</ResponseField>
+
+<Tabs>
+  <Tab title="Single question">
+    ```python
+    result = await client.chat.ask(nb_id, "What are the main themes?")
+    print(result.answer)
+    ```
+  </Tab>
+  <Tab title="Multi-turn conversation">
+    ```python
+    # First question
+    result = await client.chat.ask(nb_id, "What are the main themes?")
+    print(result.answer)
+
+    # Follow-up using the same conversation
+    result = await client.chat.ask(
+        nb_id,
+        "Can you elaborate on the first point?",
+        conversation_id=result.conversation_id,
+    )
+    print(result.answer)
+    ```
+  </Tab>
+  <Tab title="Source filtering">
+    ```python
+    # Limit to specific sources
+    result = await client.chat.ask(
+        nb_id,
+        "Summarize the key points",
+        source_ids=["src_001", "src_002"],
+    )
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### `configure(notebook_id, goal, response_length, custom_prompt)`
+
+Sets the chat persona for a notebook. This changes how the assistant formulates answers — its tone, depth, and focus.
+
+```python
+async def configure(
+    notebook_id: str,
+    goal: ChatGoal,
+    response_length: ChatResponseLength,
+    custom_prompt: str | None = None,
+) -> bool
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="goal" type="ChatGoal" required>
+  Controls the assistant's purpose. `DEFAULT` (general), `LEARNING_GUIDE` (educational focus), `CUSTOM` (uses `custom_prompt`).
+</ParamField>
+
+<ParamField path="response_length" type="ChatResponseLength" required>
+  Controls answer verbosity. `DEFAULT` · `LONGER` · `SHORTER`.
+</ParamField>
+
+<ParamField path="custom_prompt" type="str | None" default="None">
+  System prompt used when `goal=ChatGoal.CUSTOM`. Ignored for other goal values.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` when configuration was saved successfully.
+</ResponseField>
+
+```python
+from notebooklm import ChatGoal, ChatResponseLength
+
+await client.chat.configure(
+    nb_id,
+    goal=ChatGoal.LEARNING_GUIDE,
+    response_length=ChatResponseLength.LONGER,
+    custom_prompt=None,
+)
+
+# Custom persona
+await client.chat.configure(
+    nb_id,
+    goal=ChatGoal.CUSTOM,
+    response_length=ChatResponseLength.DEFAULT,
+    custom_prompt="You are a concise technical reviewer. Focus on accuracy.",
+)
+```
+
+---
+
+### `get_history(notebook_id, limit, conversation_id)`
+
+Returns a list of question-answer pairs from a recent conversation.
+
+```python
+async def get_history(
+    notebook_id: str,
+    limit: int = 100,
+    conversation_id: str | None = None,
+) -> list[tuple[str, str]]
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="limit" type="int" default="100">
+  Maximum number of turns to return.
+</ParamField>
+
+<ParamField path="conversation_id" type="str | None" default="None">
+  Specific conversation to fetch. When `None`, returns history from the most recent conversation.
+</ParamField>
+
+<ResponseField name="return" type="list[tuple[str, str]]">
+  List of `(question, answer)` string pairs, oldest first.
+</ResponseField>
+
+```python
+history = await client.chat.get_history(nb_id, limit=20)
+for question, answer in history:
+    print(f"Q: {question}")
+    print(f"A: {answer[:200]}")
+    print()
+```
+
+---
+
+### `get_conversation_id(notebook_id)`
+
+Fetches the ID of the most recent conversation for a notebook from the server.
+
+```python
+async def get_conversation_id(notebook_id: str) -> str | None
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="str | None">
+  The conversation ID string, or `None` if no conversation has been started.
+</ResponseField>
+
+```python
+conv_id = await client.chat.get_conversation_id(nb_id)
+if conv_id:
+    history = await client.chat.get_history(nb_id, conversation_id=conv_id)
+```
+
+---
+
+## Working with citations
+
+The `answer` field contains inline citation markers like `[1]`, `[2]`. Each marker corresponds to a `ChatReference` in `result.references`.
+
+```python
+result = await client.chat.ask(nb_id, "What are the main themes?")
+
+# Print answer with markers
+print(result.answer)
+
+# Inspect references
+for ref in result.references:
+    print(f"Citation [{ref.citation_number}]: source {ref.source_id}")
+    if ref.cited_text:
+        print(f"  Snippet: {ref.cited_text[:100]}")
+```
+
+<Warning>
+  `cited_text` often contains only a section header or short snippet — not the full quoted passage. The `start_char`/`end_char` positions reference NotebookLM's internal chunked index and do not map directly to positions in the raw fulltext returned by `get_fulltext()`.
+</Warning>
+
+Use `SourceFulltext.find_citation_context()` to locate the citation in the original indexed text:
+
+```python
+fulltext = await client.sources.get_fulltext(nb_id, ref.source_id)
+matches = fulltext.find_citation_context(ref.cited_text)
+
+if matches:
+    context, position = matches[0]
+    print(f"Found at char {position}: {context}")
+else:
+    print("Citation text not found in fulltext (source may have changed)")
+```
+
+<Tip>
+  Cache the `fulltext` object when processing multiple citations from the same source to avoid repeated API calls.
+</Tip>
+
+---
+
+## `AskResult` dataclass
+
+<ResponseField name="answer" type="str">
+  The answer text with inline citation markers such as `[1]`, `[2]`.
+</ResponseField>
+
+<ResponseField name="conversation_id" type="str">
+  Conversation identifier. Pass to subsequent `ask()` calls to continue the conversation.
+</ResponseField>
+
+<ResponseField name="turn_number" type="int">
+  The turn index within this conversation (starts at 1).
+</ResponseField>
+
+<ResponseField name="is_follow_up" type="bool">
+  `True` when a `conversation_id` was passed and this is a continuation.
+</ResponseField>
+
+<ResponseField name="references" type="list[ChatReference]">
+  Source references cited in the answer. See `ChatReference` fields below.
+</ResponseField>
+
+<ResponseField name="raw_response" type="str">
+  First 1000 characters of the raw API response. Useful for debugging.
+</ResponseField>
+
+---
+
+## `ChatReference` dataclass
+
+<ResponseField name="source_id" type="str">
+  UUID of the source containing the cited passage.
+</ResponseField>
+
+<ResponseField name="citation_number" type="int | None">
+  The numeric citation marker (`[1]`, `[2]`, …) that appears in the answer text.
+</ResponseField>
+
+<ResponseField name="cited_text" type="str | None">
+  A snippet or section header from the cited passage. May not be the full quote.
+</ResponseField>
+
+<ResponseField name="start_char" type="int | None">
+  Start position in NotebookLM's internal chunk index (not raw fulltext).
+</ResponseField>
+
+<ResponseField name="end_char" type="int | None">
+  End position in NotebookLM's internal chunk index.
+</ResponseField>
+
+<ResponseField name="chunk_id" type="str | None">
+  Internal chunk identifier, useful for debugging.
+</ResponseField>
+
+---
+
+## Chat configuration enums
+
+### `ChatGoal`
+
+| Value | Description |
+|---|---|
+| `ChatGoal.DEFAULT` | General-purpose assistant |
+| `ChatGoal.CUSTOM` | Uses the `custom_prompt` you provide |
+| `ChatGoal.LEARNING_GUIDE` | Educational focus with structured answers |
+
+### `ChatResponseLength`
+
+| Value | Description |
+|---|---|
+| `ChatResponseLength.DEFAULT` | Standard length |
+| `ChatResponseLength.LONGER` | More detailed answers |
+| `ChatResponseLength.SHORTER` | Concise answers |
+
+### `ChatMode`
+
+`ChatMode` is a service-level enum providing named presets for common configurations. It is distinct from `ChatGoal`, which is the low-level RPC enum used by `configure()`.
+
+| Value | Description |
+|---|---|
+| `ChatMode.DEFAULT` | General purpose |
+| `ChatMode.LEARNING_GUIDE` | Educational focus |
+| `ChatMode.CONCISE` | Brief responses |
+| `ChatMode.DETAILED` | Verbose responses |
+
+---
+
+## Complete conversation example
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient, ChatGoal, ChatResponseLength
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb_id = "your_notebook_id"
+
+        # Configure the assistant for educational use
+        await client.chat.configure(
+            nb_id,
+            goal=ChatGoal.LEARNING_GUIDE,
+            response_length=ChatResponseLength.LONGER,
+        )
+
+        # Start a conversation
+        result = await client.chat.ask(nb_id, "What are the main themes?")
+        print(result.answer)
+
+        # Inspect citations
+        for ref in result.references:
+            print(f"  [{ref.citation_number}] source={ref.source_id}")
+
+        # Continue the conversation
+        result = await client.chat.ask(
+            nb_id,
+            "Can you explain the second theme in more detail?",
+            conversation_id=result.conversation_id,
+        )
+        print(result.answer)
+
+        # Retrieve history
+        history = await client.chat.get_history(nb_id, limit=10)
+        for q, a in history:
+            print(f"Q: {q}\nA: {a[:100]}\n")
+
+asyncio.run(main())
+```

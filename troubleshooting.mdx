@@ -1,0 +1,379 @@
+---
+title: "Troubleshoot common notebooklm-py errors and issues"
+description: "Resolve common authentication errors, RPC failures, generation issues, file upload problems, and platform-specific fixes for notebooklm-py."
+---
+
+When something goes wrong with notebooklm-py, start by checking your authentication state. Most issues are either expired session cookies or a changed Google RPC method ID.
+
+<Tip>
+Run `notebooklm auth check --test` before digging into any error. It validates your storage file, checks which cookies are present, and makes a live network request to confirm your session works.
+</Tip>
+
+```bash
+notebooklm auth check          # Quick local validation
+notebooklm auth check --test   # Full validation with a network test
+notebooklm auth check --json   # Machine-readable output for CI/CD
+```
+
+## Common errors
+
+<AccordionGroup>
+
+<Accordion title="Authentication errors">
+
+### "Unauthorized" or redirect to login page
+
+**Cause:** Your session cookies have expired. This happens every few weeks. Note that automatic CSRF token refresh handles most short-lived auth errors transparently — you only see this error when the underlying cookies set during `notebooklm login` have fully expired.
+
+**Solution:**
+
+```bash
+notebooklm login
+```
+
+<Note>
+The client automatically refreshes CSRF tokens when authentication errors are detected. When an RPC call fails with an auth error, the client fetches a fresh token from the NotebookLM homepage and retries the request once. Concurrent requests share a single refresh task to prevent token thrashing. Most "CSRF token expired" errors resolve without any action on your part.
+</Note>
+
+### "CSRF token missing" or "SNlM0e not found"
+
+**Cause:** The CSRF token expired and the automatic refresh also failed. This should rarely occur.
+
+**Solution:** If automatic refresh fails, you can trigger a manual refresh in Python:
+
+```python
+# Manual refresh in Python
+await client.refresh_auth()
+```
+
+If that doesn't work, re-run `notebooklm login` — the session cookies themselves may have expired.
+
+### Browser opens but login fails
+
+**Cause:** Google is detecting automation and blocking the login attempt.
+
+**Solution:**
+
+1. Delete the browser profile: `rm -rf ~/.notebooklm/profiles/default/browser_profile/`
+2. Run `notebooklm login` again
+3. Complete any CAPTCHA or security challenges that appear
+4. Use a real mouse and keyboard — do not paste credentials via a script
+
+</Accordion>
+
+<Accordion title="RPC errors">
+
+### "RPCError: No result found for RPC ID: XyZ123"
+
+**Cause:** Google periodically changes internal RPC method IDs. The library sends a method ID that no longer matches what the server expects. This can also occur due to rate limiting, account quota limits, or API restrictions.
+
+**Diagnosis:** Enable debug mode to see what RPC IDs the server is returning:
+
+```bash
+NOTEBOOKLM_DEBUG_RPC=1 notebooklm <your-command>
+```
+
+The output will show something like:
+
+```
+DEBUG: Looking for RPC ID: Ljjv0c
+DEBUG: Found RPC IDs in response: ['NewId123']
+```
+
+If the IDs don't match, the method ID has changed. Open a GitHub issue with the new ID so a patch can be released.
+
+**Workaround while waiting for a fix:**
+
+- Wait 5–10 minutes and retry
+- Try with fewer sources selected
+- Reduce generation frequency
+
+### "RPCError: [3]" or "UserDisplayableError"
+
+**Cause:** Google returned an application-level error. Common causes are invalid parameters, a resource that no longer exists, or rate limiting.
+
+**Solution:**
+
+- Verify that your notebook and source IDs are valid
+- Add delays between intensive operations (see the rate limiting section below)
+
+</Accordion>
+
+<Accordion title="Generation failures">
+
+### Audio or video generation returns None
+
+**Cause:** A known issue that occurs under heavy load or when rate limited.
+
+**Solution:** Use `--wait` to poll until the artifact is ready, or poll manually:
+
+```bash
+# Use --wait to block until generation completes
+notebooklm generate audio --wait
+
+# Or poll the task manually
+notebooklm artifact poll <task_id>
+```
+
+### Mind map or data table generates but doesn't appear
+
+**Cause:** Generation can silently fail without raising an error.
+
+**Solution:** Wait 60 seconds and then check `artifact list`. If the artifact is still missing, try regenerating with different or fewer sources.
+
+</Accordion>
+
+<Accordion title="File upload issues">
+
+### Text or Markdown files upload but return None
+
+**Cause:** A known issue with native text file uploads.
+
+**Workaround:** Use `add_text` instead of uploading the file directly:
+
+```bash
+# Instead of: notebooklm source add ./notes.txt
+notebooklm source add "$(cat ./notes.txt)"
+```
+
+Or in Python:
+
+```python
+content = Path("notes.txt").read_text()
+await client.sources.add_text(nb_id, "My Notes", content)
+```
+
+### Large files time out
+
+**Cause:** Files over approximately 20 MB may exceed the upload timeout.
+
+**Solution:** Split large documents into smaller parts, or extract the text locally and use `add_text`.
+
+</Accordion>
+
+<Accordion title="Protected website content">
+
+### X.com / Twitter content is incorrectly parsed
+
+**Symptoms:** The source title shows something like "Fixing X.com Privacy Errors", and generated content discusses browser extensions instead of the actual post.
+
+**Cause:** X.com has aggressive anti-scraping protections. When NotebookLM fetches the URL, it receives an error page instead of the real content.
+
+**Solution:** Use the `bird` CLI to pre-fetch content and pass it as a local file:
+
+```bash
+# Step 1: Install bird (macOS/Linux)
+brew install steipete/tap/bird
+
+# Step 2: Fetch X.com content as markdown
+bird read "https://x.com/username/status/1234567890" > article.md
+
+# Step 3: Add the local markdown file to NotebookLM
+notebooklm source add ./article.md
+```
+
+Always verify that the source was correctly parsed after adding it:
+
+```bash
+notebooklm source list
+# Check that the title matches the actual article, not an error message
+```
+
+If the title contains error-related text, remove the source and re-add it using the pre-fetch method:
+
+```bash
+notebooklm source delete <source_id>
+```
+
+**Other affected sites** include paywalled news sites, sites that require JavaScript to render content, and sites with aggressive bot detection. For these, manual text extraction and `add_text` is the most reliable fallback.
+
+</Accordion>
+
+</AccordionGroup>
+
+## Known limitations
+
+### Rate limiting
+
+<Warning>
+Google enforces strict rate limits on the `batchexecute` endpoint. Hitting these limits causes RPC calls to return `None`, raises `RPCError` with ID `R7cb6c`, or raises `UserDisplayableError` with code `[3]`. Reduce request frequency and add delays between bulk operations.
+</Warning>
+
+The CLI's `--retry` flag adds automatic exponential backoff:
+
+```bash
+notebooklm generate audio --retry 3   # Retry up to 3 times on rate limit
+notebooklm generate video --retry 5   # Works with all generate commands
+```
+
+In Python, add delays between operations and implement your own backoff:
+
+```python
+import asyncio
+
+# Add delays between intensive operations
+for url in urls:
+    await client.sources.add_url(nb_id, url)
+    await asyncio.sleep(2)  # 2-second delay
+
+# Use exponential backoff on failures
+async def retry_with_backoff(coro, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return await coro
+        except RPCError:
+            wait = 2 ** attempt  # 1, 2, 4 seconds
+            await asyncio.sleep(wait)
+    raise Exception("Max retries exceeded")
+```
+
+### Quota restrictions
+
+Some features have daily or hourly quotas per account:
+
+- **Audio overviews:** Limited generations per day
+- **Video overviews:** More restricted than audio
+- **Deep research:** Consumes significant backend resources
+
+### Download requirements
+
+Artifact downloads use `httpx` with cookies from your storage state. **Playwright is not required for downloads** — only for the initial `notebooklm login`. If downloads fail with authentication errors, re-authenticate:
+
+```bash
+notebooklm login
+```
+
+When using `from_storage(path=...)` or `from_storage(profile="work")`, artifact downloads automatically use the same storage path for cookie authentication. If you are on an older version where downloads fail with "Storage file not found" pointing to the default location, upgrade or set `NOTEBOOKLM_HOME` as a workaround.
+
+### URL expiry
+
+Download URLs for audio and video are temporary and expire within hours. Always fetch a fresh artifact list immediately before downloading:
+
+```python
+# Get fresh artifact list before download
+artifacts = await client.artifacts.list(nb_id)
+audio = next(a for a in artifacts if a.kind == "audio")
+# Use audio.url immediately
+```
+
+## Platform-specific issues
+
+### Linux
+
+**Playwright missing dependencies:**
+
+```bash
+playwright install-deps chromium
+```
+
+**`playwright install chromium` fails with `TypeError: onExit is not a function`:**
+
+This occurs with some newer Playwright builds on Linux. The workaround is to install a known-good Playwright version in a clean virtual environment, before installing notebooklm-py:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install "playwright==1.57.0"
+python -m playwright install chromium
+pip install -e ".[all]"
+```
+
+Install the browser before `pip install -e ".[all]"` to avoid picking up an older broken global `playwright` executable. If you already have another `playwright` on your system, verify which one is active with `which playwright` after activating the venv.
+
+**No display available (headless server):** Browser login requires a display. Authenticate on a machine with a GUI, then copy `storage_state.json` to the headless machine.
+
+### macOS
+
+**Chromium not opening:**
+
+```bash
+playwright install chromium
+```
+
+**Security warning about Chromium:** Go to System Preferences → Security & Privacy and allow Chromium to run.
+
+### Windows
+
+**CLI hangs indefinitely:** On certain environments (particularly sandboxing software like Sandboxie), the default `ProactorEventLoop` can block at the IOCP layer. The library automatically sets `WindowsSelectorEventLoopPolicy` at CLI startup to avoid this. If you are using the Python API directly, add this before any async code:
+
+```python
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+```
+
+**Unicode encoding errors on non-English Windows:** Windows systems with non-English locales (Chinese cp950, Japanese cp932, etc.) may raise `UnicodeEncodeError` when outputting Unicode characters. The library automatically sets `PYTHONUTF8=1` at CLI startup. For Python API usage, either set `PYTHONUTF8=1` in the environment before running, or run Python with the `-X utf8` flag:
+
+```bash
+python -X utf8 your_script.py
+```
+
+### WSL
+
+Browser login opens in the Windows host browser. This is expected behavior. The storage file is saved in the WSL filesystem.
+
+## Debugging tips
+
+### Logging configuration
+
+Use `NOTEBOOKLM_LOG_LEVEL` to control how much detail notebooklm-py emits:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `NOTEBOOKLM_LOG_LEVEL` | `WARNING` | Set to `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+| `NOTEBOOKLM_DEBUG_RPC` | (unset) | Legacy: set to `1` to enable `DEBUG` level |
+
+```bash
+# WARNING (default): only show warnings and errors
+notebooklm list
+
+# INFO: show major operations (good for scripts and automation)
+NOTEBOOKLM_LOG_LEVEL=INFO notebooklm source add https://example.com
+
+# DEBUG: show all RPC calls with timing (for troubleshooting API issues)
+NOTEBOOKLM_LOG_LEVEL=DEBUG notebooklm list
+```
+
+To configure logging programmatically in Python, set the environment variable before importing the library:
+
+```python
+import logging
+import os
+
+# Set before importing notebooklm
+os.environ["NOTEBOOKLM_LOG_LEVEL"] = "DEBUG"
+
+from notebooklm import NotebookLMClient
+# All notebooklm operations now log at DEBUG level
+```
+
+### Test basic operations
+
+When isolating an issue, start with the simplest operations and work up:
+
+```bash
+# 1. Can you list notebooks?
+notebooklm list
+
+# 2. Can you create a notebook?
+notebooklm create "Test"
+
+# 3. Can you add a source?
+notebooklm source add "https://example.com"
+```
+
+### Network debugging
+
+If you suspect network connectivity issues, test basic reachability with Python:
+
+```python
+import httpx
+
+# Test basic connectivity
+async with httpx.AsyncClient() as client:
+    r = await client.get("https://notebooklm.google.com")
+    print(r.status_code)  # Should be 200 or 302
+```

@@ -1,0 +1,113 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "notebooklm-py",
+  "projectDescription": "An unofficial Python SDK and CLI for Google NotebookLM providing full programmatic access—including features not exposed in the web UI—via Python, CLI, and AI agent integrations.",
+  "theme": "luma",
+  "primaryColor": "#848c8e",
+  "lightColor": "#11161e",
+  "darkColor": "#cfd0d2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/python-api",
+              "guides/cli",
+              "guides/agent-integration",
+              "guides/content-generation",
+              "guides/workflows"
+            ]
+          },
+          {
+            "group": "Configuration & Operations",
+            "pages": [
+              "configuration",
+              "troubleshooting",
+              "stability"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python Client",
+            "pages": [
+              "api/client",
+              "api/notebooks",
+              "api/sources",
+              "api/artifacts",
+              "api/chat",
+              "api/research",
+              "api/notes",
+              "api/settings",
+              "api/sharing"
+            ]
+          },
+          {
+            "group": "Types & Exceptions",
+            "pages": [
+              "api/types",
+              "api/exceptions",
+              "api/enums"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/overview",
+              "cli/generate",
+              "cli/download"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Full programmatic access to Google NotebookLM via Python async API and CLI",
+    "Generate Audio Overviews (podcasts), videos, slide decks, quizzes, flashcards, infographics, data tables, and mind maps",
+    "Add sources from URLs, YouTube, files (PDF, text, Markdown, Word, audio, video, images), and Google Drive",
+    "Download all generated artifacts locally (MP3, MP4, PDF, PNG, CSV, JSON, Markdown)",
+    "AI agent integration for Claude Code, Codex, and other LLM agents via bundled skill files",
+    "Web and Drive research agents with auto-import of discovered sources",
+    "Programmatic notebook sharing and user permission management",
+    "Features beyond the web UI: batch downloads, quiz/flashcard export, mind map JSON extraction, PPTX slide download, slide revision",
+    "CI/CD support via NOTEBOOKLM_AUTH_JSON environment variable",
+    "Multi-profile support for managing multiple Google accounts"
+  ],
+  "publicApiSurface": [
+    "NotebookLMClient",
+    "NotebookLMClient.from_storage()",
+    "client.notebooks.list() / create() / delete() / rename()",
+    "client.sources.add_url() / add_youtube() / add_file() / add_text() / add_drive()",
+    "client.artifacts.generate_audio() / generate_video() / generate_quiz() / generate_report()",
+    "client.artifacts.download_audio() / download_video() / download_quiz() / download_flashcards()",
+    "client.artifacts.wait_for_completion()",
+    "client.chat.ask() / configure() / get_history()",
+    "client.research.start() / poll() / import_sources()",
+    "client.notes.create() / list() / update() / delete()",
+    "client.settings.get_output_language() / set_output_language() / get_account_limits()",
+    "client.sharing.get_status() / set_public() / add_user() / remove_user()",
+    "AuthTokens",
+    "notebooklm login / list / create / use / ask / summary",
+    "notebooklm source add / add-research / fulltext / guide",
+    "notebooklm generate audio / video / quiz / flashcards / slide-deck / report / mind-map",
+    "notebooklm download audio / video / quiz / flashcards / slide-deck / mind-map",
+    "notebooklm skill install / status",
+    "notebooklm profile create / switch / list"
+  ]
+}

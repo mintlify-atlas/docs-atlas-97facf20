@@ -1,0 +1,332 @@
+---
+title: "SharingAPI — notebook sharing and permissions"
+description: "Full reference for client.sharing: enable public links, set view levels, and manage per-user permissions with SharePermission and ShareViewLevel enums."
+---
+
+`client.sharing` gives you full control over how a notebook is shared — both publicly via a link and privately with individual users by email. You can read the current sharing state, toggle public access, restrict what anonymous viewers can see, and grant or revoke editor or viewer permissions for specific Google accounts. All sharing operations return a `ShareStatus` object reflecting the notebook's complete sharing configuration after the change.
+
+## Methods
+
+### `get_status(notebook_id)`
+
+Reads the current sharing configuration for a notebook.
+
+```python
+async def get_status(notebook_id: str) -> ShareStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ResponseField name="return" type="ShareStatus">
+  Full sharing configuration including public status, view level, shared users, and share URL.
+</ResponseField>
+
+```python
+status = await client.sharing.get_status(nb_id)
+print(f"Public: {status.is_public}")
+print(f"Share URL: {status.share_url}")
+print(f"Shared with: {[u.email for u in status.shared_users]}")
+```
+
+---
+
+### `set_public(notebook_id, public)`
+
+Enables or disables public link sharing for the notebook.
+
+```python
+async def set_public(notebook_id: str, public: bool) -> ShareStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="public" type="bool" required>
+  `True` to make the notebook accessible to anyone with the link; `False` to restrict to explicitly shared users only.
+</ParamField>
+
+<ResponseField name="return" type="ShareStatus">
+  Updated `ShareStatus`. When `public=True`, `status.share_url` contains the public URL.
+</ResponseField>
+
+```python
+# Enable public access
+status = await client.sharing.set_public(nb_id, True)
+print(f"Share URL: {status.share_url}")
+
+# Disable public access
+status = await client.sharing.set_public(nb_id, False)
+```
+
+---
+
+### `set_view_level(notebook_id, level)`
+
+Controls what anonymous (link-based) viewers can access when the notebook is public.
+
+```python
+async def set_view_level(notebook_id: str, level: ShareViewLevel) -> None
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="level" type="ShareViewLevel" required>
+  `ShareViewLevel.FULL_NOTEBOOK` — viewers can access chat, sources, and notes.  
+  `ShareViewLevel.CHAT_ONLY` — viewers can only use the chat interface.
+</ParamField>
+
+```python
+from notebooklm import ShareViewLevel
+
+# Restrict to chat only
+await client.sharing.set_view_level(nb_id, ShareViewLevel.CHAT_ONLY)
+
+# Allow full access
+await client.sharing.set_view_level(nb_id, ShareViewLevel.FULL_NOTEBOOK)
+```
+
+---
+
+### `add_user(notebook_id, email, permission, notify, welcome_message)`
+
+Shares the notebook with a specific Google account by email.
+
+```python
+async def add_user(
+    notebook_id: str,
+    email: str,
+    permission: SharePermission,
+    notify: bool = True,
+    welcome_message: str = "",
+) -> ShareStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="email" type="str" required>
+  Google account email address of the user to add.
+</ParamField>
+
+<ParamField path="permission" type="SharePermission" required>
+  `SharePermission.EDITOR` — can edit notebook content.  
+  `SharePermission.VIEWER` — read-only access.
+</ParamField>
+
+<ParamField path="notify" type="bool" default="true">
+  When `True`, Google sends an email notification to the invited user.
+</ParamField>
+
+<ParamField path="welcome_message" type="str" default='""'>
+  Optional message to include in the notification email.
+</ParamField>
+
+<ResponseField name="return" type="ShareStatus">
+  Updated `ShareStatus` including the newly added user.
+</ResponseField>
+
+```python
+from notebooklm import SharePermission
+
+status = await client.sharing.add_user(
+    nb_id,
+    "colleague@example.com",
+    SharePermission.VIEWER,
+    notify=True,
+    welcome_message="Check out my research notebook!",
+)
+```
+
+---
+
+### `update_user(notebook_id, email, permission)`
+
+Changes the permission level for a user already sharing the notebook.
+
+```python
+async def update_user(
+    notebook_id: str,
+    email: str,
+    permission: SharePermission,
+) -> ShareStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="email" type="str" required>
+  Email of the user whose permission should change.
+</ParamField>
+
+<ParamField path="permission" type="SharePermission" required>
+  New permission level (`EDITOR` or `VIEWER`).
+</ParamField>
+
+<ResponseField name="return" type="ShareStatus">
+  Updated `ShareStatus`.
+</ResponseField>
+
+```python
+status = await client.sharing.update_user(
+    nb_id,
+    "colleague@example.com",
+    SharePermission.EDITOR,
+)
+```
+
+---
+
+### `remove_user(notebook_id, email)`
+
+Revokes all access for a user.
+
+```python
+async def remove_user(notebook_id: str, email: str) -> ShareStatus
+```
+
+<ParamField path="notebook_id" type="str" required>
+  The notebook ID.
+</ParamField>
+
+<ParamField path="email" type="str" required>
+  Email of the user to remove.
+</ParamField>
+
+<ResponseField name="return" type="ShareStatus">
+  Updated `ShareStatus` without the removed user.
+</ResponseField>
+
+```python
+status = await client.sharing.remove_user(nb_id, "colleague@example.com")
+```
+
+---
+
+## `ShareStatus` dataclass
+
+<ResponseField name="notebook_id" type="str">
+  The notebook this status describes.
+</ResponseField>
+
+<ResponseField name="is_public" type="bool">
+  `True` when anyone with the link can access the notebook.
+</ResponseField>
+
+<ResponseField name="access" type="ShareAccess">
+  `ShareAccess.RESTRICTED` — only explicitly shared users.  
+  `ShareAccess.ANYONE_WITH_LINK` — public link active.
+</ResponseField>
+
+<ResponseField name="view_level" type="ShareViewLevel">
+  `FULL_NOTEBOOK` or `CHAT_ONLY`.
+</ResponseField>
+
+<ResponseField name="shared_users" type="list[SharedUser]">
+  List of users with explicit access. Does not include the notebook owner.
+</ResponseField>
+
+<ResponseField name="share_url" type="str | None">
+  Public share URL when `is_public=True`, otherwise `None`.
+</ResponseField>
+
+---
+
+## `SharedUser` dataclass
+
+<ResponseField name="email" type="str">
+  User's Google account email.
+</ResponseField>
+
+<ResponseField name="permission" type="SharePermission">
+  Current permission level: `OWNER`, `EDITOR`, or `VIEWER`.
+</ResponseField>
+
+<ResponseField name="display_name" type="str | None">
+  User's display name, or `None` if not available.
+</ResponseField>
+
+<ResponseField name="avatar_url" type="str | None">
+  URL to the user's profile avatar, or `None`.
+</ResponseField>
+
+---
+
+## Sharing enums
+
+### `SharePermission`
+
+| Value | Description |
+|---|---|
+| `SharePermission.OWNER` | Full control. Cannot be assigned — read-only, indicates the notebook owner. |
+| `SharePermission.EDITOR` | Can edit notebook content, add sources, generate artifacts. |
+| `SharePermission.VIEWER` | Read-only access. |
+
+### `ShareViewLevel`
+
+| Value | Description |
+|---|---|
+| `ShareViewLevel.FULL_NOTEBOOK` | Viewers access chat, sources, and notes. |
+| `ShareViewLevel.CHAT_ONLY` | Viewers only see the chat interface. |
+
+### `ShareAccess`
+
+| Value | Description |
+|---|---|
+| `ShareAccess.RESTRICTED` | Only explicitly invited users can access the notebook. |
+| `ShareAccess.ANYONE_WITH_LINK` | Anyone with the share URL can access the notebook. |
+
+---
+
+## Complete sharing workflow example
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient, SharePermission, ShareViewLevel
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        nb_id = "your_notebook_id"
+
+        # Check current sharing state
+        status = await client.sharing.get_status(nb_id)
+        print(f"Public: {status.is_public}")
+        print(f"Users: {[u.email for u in status.shared_users]}")
+
+        # Enable public sharing with chat-only view
+        status = await client.sharing.set_public(nb_id, True)
+        print(f"Share URL: {status.share_url}")
+
+        await client.sharing.set_view_level(nb_id, ShareViewLevel.CHAT_ONLY)
+
+        # Add a collaborator as an editor
+        status = await client.sharing.add_user(
+            nb_id,
+            "colleague@example.com",
+            SharePermission.EDITOR,
+            notify=True,
+            welcome_message="I've shared my research with you!",
+        )
+
+        # Downgrade to viewer
+        status = await client.sharing.update_user(
+            nb_id,
+            "colleague@example.com",
+            SharePermission.VIEWER,
+        )
+
+        # Revoke access
+        status = await client.sharing.remove_user(nb_id, "colleague@example.com")
+
+        # Disable public sharing
+        status = await client.sharing.set_public(nb_id, False)
+        print(f"Sharing disabled. is_public={status.is_public}")
+
+asyncio.run(main())
+```

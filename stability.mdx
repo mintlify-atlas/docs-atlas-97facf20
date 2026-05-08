@@ -1,0 +1,271 @@
+---
+title: "API stability and versioning policy for notebooklm-py"
+description: "Understand the versioning policy, stable public API surface, deprecation timeline, and how Google API breakage is detected and fixed."
+---
+
+notebooklm-py is built on top of undocumented Google internal APIs. This means the library provides its own stability guarantees for its Python interface, but it cannot make any guarantees about the underlying APIs it calls.
+
+<Warning>
+Google can change, rename, or remove internal API endpoints at any time without notice, deprecation warnings, or SLAs. These changes can break notebooklm-py without any advance warning. Always use the latest patch version to pick up RPC ID fixes promptly.
+</Warning>
+
+## Important context
+
+Because this library wraps undocumented Google APIs, there are some important differences from libraries backed by official APIs:
+
+- **No stability guarantees from Google** — internal endpoints can change at any time
+- **No deprecation notices** — Google does not announce changes to internal APIs
+- **No SLAs or support** — this is a community project, not affiliated with Google
+
+Within these constraints, notebooklm-py follows a structured versioning policy for its own Python interface.
+
+## Versioning policy
+
+The library follows Semantic Versioning (`MAJOR.MINOR.PATCH`) with one modification: RPC method ID fixes caused by Google changes are released as patch versions, not major versions, because they fix breakage rather than introduce breaking changes on the library's side.
+
+| Change type | Version bump | Example |
+|---|---|---|
+| RPC method ID fixes (Google changed something) | PATCH | `0.1.0 → 0.1.1` |
+| Bug fixes | PATCH | `0.1.1 → 0.1.2` |
+| New features (backward compatible) | MINOR | `0.1.2 → 0.2.0` |
+| Public API breaking changes | MAJOR | `0.2.0 → 1.0.0` |
+
+Because Google's breaking changes manifest as silent RPC ID changes rather than schema changes, you should always use the latest patch version. Pinning to an exact patch version means you may miss fixes when Google rotates method IDs.
+
+## Public API surface
+
+The following exports are considered stable and will not change in a breaking way without a major version bump.
+
+### Stable exports
+
+```python
+# Client
+NotebookLMClient
+NotebookLMClient.from_storage()
+NotebookLMClient.notebooks
+NotebookLMClient.sources
+NotebookLMClient.artifacts
+NotebookLMClient.chat
+NotebookLMClient.research
+NotebookLMClient.notes
+NotebookLMClient.settings
+NotebookLMClient.sharing
+
+# Types
+Notebook, Source, Artifact, Note
+GenerationStatus, AskResult
+NotebookDescription, ConversationTurn
+ShareStatus, SharedUser, SourceFulltext
+
+# Exceptions (all inherit from NotebookLMError)
+NotebookLMError                    # Base exception
+RPCError, AuthError, RateLimitError, RPCTimeoutError, ServerError
+NetworkError, DecodingError, UnknownRPCMethodError
+ClientError, ConfigurationError, ValidationError
+SourceError, SourceAddError, SourceProcessingError, SourceTimeoutError, SourceNotFoundError
+NotebookError, NotebookNotFoundError
+ArtifactError, ArtifactDownloadError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
+ChatError
+
+# Enums
+AudioFormat, VideoFormat, ExportType
+SourceType, ArtifactType, SourceStatus
+ShareAccess, SharePermission, ShareViewLevel
+ChatGoal, ChatResponseLength, ChatMode
+
+# Auth
+AuthTokens, DEFAULT_STORAGE_PATH
+```
+
+### Internal APIs
+
+The following are **not** part of the public API and may change without notice:
+
+```python
+notebooklm.rpc.*          # RPC protocol internals
+notebooklm._core.*        # Core infrastructure
+notebooklm._*.py          # All underscore-prefixed modules
+notebooklm.auth.*         # Auth internals (except AuthTokens)
+```
+
+If you need to use internal APIs for advanced use cases, import them explicitly so that the intent is visible in your code:
+
+```python
+# Explicit import for power users (may break on any release)
+from notebooklm.rpc import RPCMethod, encode_rpc_request
+```
+
+## Deprecation policy
+
+When a public API is deprecated, the library follows this process:
+
+1. **Deprecation notice** — deprecated features emit `DeprecationWarning` at runtime
+2. **Documentation** — deprecations are noted in docstrings and the CHANGELOG
+3. **Removal timeline** — deprecated features are removed in the next major version
+4. **Migration guide** — breaking changes include migration instructions
+
+### Currently deprecated
+
+The following attributes are deprecated and will be removed in **v0.4.0**:
+
+| Deprecated | Replacement | Notes |
+|---|---|---|
+| `Source.source_type` | `Source.kind` | Returns a `SourceType` string enum |
+| `Artifact.artifact_type` | `Artifact.kind` | Returns an `ArtifactType` string enum |
+| `Artifact.variant` | `Artifact.kind` | Use `.is_quiz` or `.is_flashcards` helpers |
+| `SourceFulltext.source_type` | `SourceFulltext.kind` | Returns a `SourceType` string enum |
+| `StudioContentType` | `ArtifactType` | String enum for user-facing code |
+
+## Migration guide: v0.2.x to v0.3.0
+
+Version 0.3.0 introduced the `.kind` property on sources and artifacts, deprecating the older `.source_type`, `.artifact_type`, and `.variant` attributes. Update your code now — these will be removed in v0.4.0.
+
+### `Source.source_type` → `Source.kind`
+
+<CodeGroup>
+
+```python Before (deprecated)
+source = await client.sources.list(notebook_id)[0]
+if source.source_type == "pdf":  # Emits DeprecationWarning
+    print("This is a PDF")
+```
+
+```python After (recommended)
+from notebooklm import SourceType
+
+source = await client.sources.list(notebook_id)[0]
+
+# Option 1: Use enum comparison (recommended)
+if source.kind == SourceType.PDF:
+    print("This is a PDF")
+
+# Option 2: Use string comparison (str enum supports this)
+if source.kind == "pdf":
+    print("This is a PDF")
+```
+
+</CodeGroup>
+
+Available `SourceType` values: `GOOGLE_DOCS`, `GOOGLE_SLIDES`, `GOOGLE_SPREADSHEET`, `PDF`, `PASTED_TEXT`, `WEB_PAGE`, `YOUTUBE`, `MARKDOWN`, `DOCX`, `CSV`, `IMAGE`, `MEDIA`, `UNKNOWN`.
+
+### `Artifact.artifact_type` → `Artifact.kind`
+
+<CodeGroup>
+
+```python Before (deprecated)
+from notebooklm import StudioContentType  # Emits DeprecationWarning
+
+artifact = await client.artifacts.list(notebook_id)[0]
+if artifact.artifact_type == StudioContentType.AUDIO:  # Emits DeprecationWarning
+    print("This is an audio artifact")
+```
+
+```python After (recommended)
+from notebooklm import ArtifactType
+
+artifact = await client.artifacts.list(notebook_id)[0]
+
+# Option 1: Use enum comparison (recommended)
+if artifact.kind == ArtifactType.AUDIO:
+    print("This is an audio artifact")
+
+# Option 2: Use string comparison (str enum supports this)
+if artifact.kind == "audio":
+    print("This is an audio artifact")
+```
+
+</CodeGroup>
+
+Available `ArtifactType` values: `AUDIO`, `VIDEO`, `REPORT`, `QUIZ`, `FLASHCARDS`, `MIND_MAP`, `INFOGRAPHIC`, `SLIDE_DECK`, `DATA_TABLE`, `UNKNOWN`.
+
+### `Artifact.variant` → `Artifact.kind` or helper properties
+
+<CodeGroup>
+
+```python Before (deprecated)
+if artifact.artifact_type == 4 and artifact.variant == 2:  # Deprecated
+    print("This is a quiz")
+```
+
+```python After (recommended)
+# Option 1: Use .kind
+if artifact.kind == ArtifactType.QUIZ:
+    print("This is a quiz")
+
+# Option 2: Use helper properties
+if artifact.is_quiz:
+    print("This is a quiz")
+if artifact.is_flashcards:
+    print("These are flashcards")
+```
+
+</CodeGroup>
+
+The `.kind` property abstracts internal integer codes that Google may change, string enums work naturally in comparisons, logging, and serialization, and unknown types return `UNKNOWN` with a warning instead of crashing.
+
+## When Google breaks things
+
+When Google changes their internal APIs, the fix process follows a consistent sequence:
+
+1. **Detection** — the nightly automated RPC health check identifies the changed method ID
+2. **Investigation** — the new method ID is located using browser devtools on the NotebookLM site
+3. **Fix** — `rpc/types.py` is updated with the new method ID
+4. **Release** — a patch release is published as quickly as possible
+
+### Automated RPC health check
+
+<Note>
+A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods. When it detects a mismatch, it automatically opens a GitHub issue with the `bug`, `rpc-breakage`, and `automated` labels and shows the expected vs. actual IDs along with which `RPCMethod` entries need updating.
+</Note>
+
+The health check verifies that the method ID the library sends matches the ID returned in the response envelope. For example, `LIST_NOTEBOOKS` sends `wXbhsf` and the response must contain `wXbhsf`. The check does not validate response data correctness or schema — those are covered by end-to-end tests. This design is intentional: Google's breaking change pattern is silent ID rotations, not schema changes, and even error responses contain the method ID, so mismatches are detected reliably.
+
+To trigger the check manually:
+
+```bash
+gh workflow run rpc-health.yml
+```
+
+### Self-recovery before a patch is released
+
+If Google breaks something and you cannot wait for a patch release, you can temporarily override the RPC method ID in your local code:
+
+1. Open browser devtools on the NotebookLM site
+2. Perform the failing operation manually in the browser
+3. Find the new RPC method ID in the Network tab
+4. Patch your local installation before importing the library:
+
+```python
+# In your code, before using the library
+from notebooklm.rpc.types import RPCMethod
+RPCMethod.SOME_METHOD._value_ = "NewMethodId"
+```
+
+## Upgrade recommendations
+
+Always stay on the latest patch version to receive RPC ID fixes as soon as they are released:
+
+```bash
+pip install --upgrade notebooklm-py
+```
+
+When pinning versions, accept patch and minor updates so you receive both RPC fixes and new features, but protect against breaking changes:
+
+```toml
+# pyproject.toml (recommended)
+dependencies = [
+    "notebooklm-py>=0.1,<1.0",  # Accept patches and minors
+]
+```
+
+```text
+# requirements.txt (for reproducibility — update regularly)
+notebooklm-py==0.1.0
+```
+
+When upgrading across minor versions, test in a development environment first:
+
+```bash
+pip install notebooklm-py==X.Y.Z
+pytest
+```

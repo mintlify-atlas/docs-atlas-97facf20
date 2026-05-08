@@ -1,0 +1,348 @@
+---
+title: "notebooklm download — save artifacts locally"
+description: "Reference for notebooklm download: save audio, video, slide decks, reports, quizzes, flashcards, mind maps, and data tables to local files in multiple formats."
+---
+
+The `download` command group saves completed artifacts to your local filesystem. You can download the latest artifact, a specific artifact by ID or name, or all artifacts of a given type at once. The CLI handles authentication for download URLs automatically using your saved session.
+
+```bash
+notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
+```
+
+## Common options
+
+These options are available on most download subcommands:
+
+| Option | Description |
+|--------|-------------|
+| `OUTPUT_PATH` | Destination file path. If omitted, a name is generated from the artifact title. |
+| `-a, --artifact ID` | Select a specific artifact by ID (supports partial IDs) |
+| `--all` | Download all completed artifacts of this type |
+| `--latest` | Download only the most recently created artifact (default when no selector is given) |
+| `--earliest` | Download only the oldest artifact |
+| `--name NAME` | Download artifact with a matching title (supports partial matches) |
+| `--force` | Overwrite existing files |
+| `--dry-run` | Show what would be downloaded without actually downloading |
+| `--json` | Output result as JSON |
+
+## Artifact type reference
+
+| Type | Default extension | Format |
+|------|-------------------|--------|
+| `audio` | `.mp4` | Audio overview in MP4 container |
+| `video` | `.mp4` | Video overview |
+| `cinematic-video` | `.mp4` | Alias for `download video` |
+| `slide-deck` | `.pdf` | PDF (default) or `.pptx` with `--format pptx` |
+| `infographic` | `.png` | PNG image |
+| `report` | `.md` | Markdown extracted from the report artifact |
+| `mind-map` | `.json` | Hierarchical JSON tree |
+| `data-table` | `.csv` | CSV with UTF-8 BOM for Excel compatibility |
+| `quiz` | `.json` | JSON, Markdown, or HTML with `--format` |
+| `flashcards` | `.json` | JSON, Markdown, or HTML with `--format` |
+
+---
+
+<AccordionGroup>
+
+<Accordion title="audio — download an audio overview">
+
+Download an audio overview (podcast) as an MP4 file.
+
+```bash
+notebooklm download audio [OUTPUT_PATH] [OPTIONS]
+```
+
+```bash
+# Download the latest podcast
+notebooklm download audio ./podcast.mp4
+
+# Download all audio artifacts
+notebooklm download audio --all
+
+# Preview what would be downloaded
+notebooklm download audio --all --dry-run
+
+# Download a specific artifact by ID
+notebooklm download audio ./podcast.mp4 --artifact abc123
+
+# Force overwrite existing file
+notebooklm download audio ./podcast.mp4 --force
+```
+
+</Accordion>
+
+<Accordion title="video — download a video overview">
+
+Download a video overview as an MP4 file.
+
+```bash
+notebooklm download video [OUTPUT_PATH] [OPTIONS]
+```
+
+```bash
+# Download the latest video
+notebooklm download video ./overview.mp4
+
+# Download the earliest video
+notebooklm download video --earliest
+
+# Download all videos
+notebooklm download video --all
+
+# JSON output for scripting
+notebooklm download video ./overview.mp4 --json
+```
+
+</Accordion>
+
+<Accordion title="cinematic-video — download a cinematic video">
+
+Alias for `download video`. Downloads a cinematic-style video overview as an MP4 file. Accepts the same options as `video`.
+
+```bash
+notebooklm download cinematic-video [OUTPUT_PATH] [OPTIONS]
+```
+
+```bash
+notebooklm download cinematic-video ./documentary.mp4
+
+notebooklm download cinematic-video --latest --json
+```
+
+</Accordion>
+
+<Accordion title="slide-deck — download a slide presentation">
+
+Download a slide deck as PDF (default) or editable PowerPoint. Downloading as PPTX is a beyond-web-UI feature — the NotebookLM web interface only offers PDF export.
+
+```bash
+notebooklm download slide-deck [OUTPUT_PATH] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `pdf`, `pptx` | `pdf` | Output file format |
+
+```bash
+# Download latest slide deck as PDF
+notebooklm download slide-deck ./slides.pdf
+
+# Download as editable PowerPoint
+notebooklm download slide-deck --format pptx
+
+# Download a specific deck by name
+notebooklm download slide-deck --name "Final Presentation"
+
+# Preview all slide decks
+notebooklm download slide-deck --all --dry-run
+```
+
+<Note>
+  PPTX download is not available in the NotebookLM web UI. Use this CLI command to get an editable PowerPoint file.
+</Note>
+
+</Accordion>
+
+<Accordion title="infographic — download an infographic">
+
+Download a generated infographic as a PNG image.
+
+```bash
+notebooklm download infographic [OUTPUT_PATH] [OPTIONS]
+```
+
+```bash
+# Download the latest infographic
+notebooklm download infographic ./infographic.png
+
+# Download all infographics
+notebooklm download infographic --all
+
+# Download by artifact ID
+notebooklm download infographic ./overview.png --artifact art456
+```
+
+</Accordion>
+
+<Accordion title="report — download a text report">
+
+Download a report (Briefing Doc, Study Guide, Blog Post, or Custom) as a Markdown file. The CLI extracts the markdown content from the artifact automatically.
+
+```bash
+notebooklm download report [OUTPUT_PATH] [OPTIONS]
+```
+
+```bash
+# Download the latest report
+notebooklm download report ./report.md
+
+# Download a study guide by name
+notebooklm download report --name "Study Guide"
+
+# Download all reports
+notebooklm download report --all
+
+# Download to a specific path
+notebooklm download report ./study-guide.md
+```
+
+</Accordion>
+
+<Accordion title="mind-map — download a mind map">
+
+Download a mind map as a JSON file containing a hierarchical tree structure. The JSON format is compatible with most mind map visualization tools.
+
+```bash
+notebooklm download mind-map [OUTPUT_PATH] [OPTIONS]
+```
+
+The output JSON uses the following structure:
+
+```json
+{
+  "name": "Main Topic",
+  "children": [
+    {
+      "name": "Subtopic A",
+      "children": [
+        { "name": "Detail 1", "children": [] },
+        { "name": "Detail 2", "children": [] }
+      ]
+    },
+    {
+      "name": "Subtopic B",
+      "children": []
+    }
+  ]
+}
+```
+
+```bash
+# Download the latest mind map
+notebooklm download mind-map ./concept-map.json
+
+# Download all mind maps
+notebooklm download mind-map --all
+
+# Preview without downloading
+notebooklm download mind-map --all --dry-run
+```
+
+</Accordion>
+
+<Accordion title="data-table — download a data table">
+
+Download a data table as a CSV file. The CSV uses UTF-8 with BOM encoding for compatibility with Excel on Windows and macOS.
+
+```bash
+notebooklm download data-table [OUTPUT_PATH] [OPTIONS]
+```
+
+```bash
+# Download the latest data table
+notebooklm download data-table ./data.csv
+
+# Download and open directly in Excel (BOM encoding handles this)
+notebooklm download data-table ./research-data.csv
+
+# Download all data tables
+notebooklm download data-table --all
+
+# Download a specific table by name
+notebooklm download data-table --name "Market Comparison"
+```
+
+</Accordion>
+
+<Accordion title="quiz — download a quiz">
+
+Download a quiz in JSON (default), Markdown, or HTML format.
+
+```bash
+notebooklm download quiz [OUTPUT_PATH] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `json`, `markdown`, `html` | `json` | Output format |
+| `-n, --notebook ID` | Notebook ID | active context | Specify notebook |
+| `-a, --artifact ID` | Artifact ID | latest | Select specific quiz artifact |
+
+**Output formats:**
+- **JSON** — Structured data preserving all API fields: `answerOptions`, `rationale`, `isCorrect`, `hint`
+- **Markdown** — Human-readable with checkboxes indicating correct answers
+- **HTML** — Raw HTML as returned from NotebookLM
+
+```bash
+# Download quiz as JSON (default)
+notebooklm download quiz quiz.json
+
+# Download as markdown with answers marked
+notebooklm download quiz --format markdown quiz.md
+
+# Download as raw HTML
+notebooklm download quiz --format html quiz.html
+
+# Download a specific quiz by artifact ID
+notebooklm download quiz --artifact art789 quiz.json
+```
+
+</Accordion>
+
+<Accordion title="flashcards — download a flashcard deck">
+
+Download a flashcard deck in JSON (default), Markdown, or HTML format. The JSON output normalizes `f`/`b` field names to `front`/`back` for easier processing.
+
+```bash
+notebooklm download flashcards [OUTPUT_PATH] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `json`, `markdown`, `html` | `json` | Output format |
+| `-n, --notebook ID` | Notebook ID | active context | Specify notebook |
+| `-a, --artifact ID` | Artifact ID | latest | Select specific flashcard artifact |
+
+**Output formats:**
+- **JSON** — Structured data with `front`/`back` fields (normalized from API `f`/`b`)
+- **Markdown** — Human-readable cards in a readable list format
+- **HTML** — Raw HTML as returned from NotebookLM
+
+```bash
+# Download flashcards as JSON
+notebooklm download flashcards cards.json
+
+# Download as markdown for reading
+notebooklm download flashcards --format markdown cards.md
+
+# Download as raw HTML
+notebooklm download flashcards --format html cards.html
+
+# Download a specific deck
+notebooklm download flashcards --artifact art321 cards.json
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## Batch download examples
+
+You can download multiple artifacts at once using `--all` and preview the results first with `--dry-run`.
+
+```bash
+# Preview all audio artifacts before downloading
+notebooklm download audio --all --dry-run
+
+# Download all audio artifacts
+notebooklm download audio --all
+
+# Download all reports to a directory
+mkdir -p ./reports
+notebooklm download report --all
+
+# Download all infographics with JSON output for logging
+notebooklm download infographic --all --json
+```

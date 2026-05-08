@@ -1,0 +1,378 @@
+---
+title: "notebooklm generate — create AI content"
+description: "Reference for notebooklm generate: create audio overviews, videos, quizzes, flashcards, reports, infographics, slide decks, data tables, and mind maps."
+---
+
+The `generate` command group creates AI content from your notebook sources. Most subcommands are **asynchronous by default**: they start generation and return immediately with a `task_id`, so you can continue working while the content is produced in the background. The only synchronous exception is `mind-map`, which completes instantly.
+
+<Note>
+  Generation tasks can take anywhere from seconds (`mind-map`) to 30+ minutes (complex video or audio). For LLM agents, avoid `--wait` and instead poll with `artifact wait <id>` in a separate step.
+</Note>
+
+```bash
+notebooklm generate <type> [description] [OPTIONS]
+```
+
+All generate subcommands support:
+- `-s, --source ID` — limit generation to specific sources (repeatable)
+- `--json` — return `{"task_id": "...", "status": "..."}` for scripting
+- `--language CODE` — override the output language (defaults to account setting or `en`)
+- `--retry N` — automatically retry on rate limits with exponential backoff
+- `--wait` — wait inline for completion (not recommended for agents)
+
+---
+
+<AccordionGroup>
+
+<Accordion title="audio — generate a podcast">
+
+Generate an audio overview in podcast format from your notebook sources.
+
+```bash
+notebooklm generate audio [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `deep-dive`, `brief`, `critique`, `debate` | `deep-dive` | Podcast discussion format |
+| `--length` | `short`, `default`, `long` | `default` | Approximate duration |
+| `--language` | BCP-47 code | account setting | Output language |
+| `-s, --source` | Source ID | all sources | Limit to specific source(s) |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+| `--retry N` | integer | `0` | Retries on rate limit with backoff |
+
+```bash
+# Basic podcast (async, returns immediately)
+notebooklm generate audio
+
+# Debate format with a custom instruction
+notebooklm generate audio "Compare the two main viewpoints" --format debate
+
+# Short podcast, wait for completion
+notebooklm generate audio "Focus on key takeaways" --length short --wait
+
+# Generate from specific sources only
+notebooklm generate audio -s src_abc -s src_def
+
+# Machine-readable output for scripting
+notebooklm generate audio --json
+# Output: {"task_id": "abc123...", "status": "pending"}
+
+# Retry up to 3 times on rate limits
+notebooklm generate audio --retry 3 --json
+```
+
+</Accordion>
+
+<Accordion title="video — generate a video overview">
+
+Generate a video overview with animated visuals from your notebook sources.
+
+```bash
+notebooklm generate video [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `explainer`, `brief` | `explainer` | Video format |
+| `--style` | `auto`, `classic`, `whiteboard`, `kawaii`, `anime`, `watercolor`, `retro-print`, `heritage`, `paper-craft` | `auto` | Visual animation style |
+| `--language` | BCP-47 code | account setting | Output language |
+| `-s, --source` | Source ID | all sources | Limit to specific source(s) |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+
+```bash
+# Kid-friendly explainer with kawaii style
+notebooklm generate video "Explain for 5 year olds" --style kawaii
+
+# Professional classic style, wait for completion
+notebooklm generate video --style classic --wait
+
+# Generate from specific sources
+notebooklm generate video -s src_123 -s src_456
+
+# Machine-readable output
+notebooklm generate video --json
+```
+
+</Accordion>
+
+<Accordion title="cinematic-video — generate a cinematic video">
+
+Alias for `generate video --format cinematic`. Generates a cinematic-style video overview. Accepts the same `--style` and other options as `video`.
+
+```bash
+notebooklm generate cinematic-video [description] [OPTIONS]
+```
+
+```bash
+# Documentary-style cinematic video
+notebooklm generate cinematic-video "Documentary about quantum physics"
+
+# With a specific visual style
+notebooklm generate cinematic-video "History of AI" --style watercolor --wait
+```
+
+</Accordion>
+
+<Accordion title="slide-deck — generate a slide presentation">
+
+Generate a slide deck from your notebook sources. Download as PDF (default) or editable PPTX with `notebooklm download slide-deck --format pptx`.
+
+```bash
+notebooklm generate slide-deck [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `detailed`, `presenter` | `detailed` | Slide template |
+| `--length` | `default`, `short` | `default` | Approximate slide count |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+
+```bash
+# Default detailed slide deck
+notebooklm generate slide-deck
+
+# Presenter slides with speaker notes
+notebooklm generate slide-deck "Key findings for the board" --format presenter --wait
+
+# Short slide deck as JSON
+notebooklm generate slide-deck --length short --json
+```
+
+</Accordion>
+
+<Accordion title="revise-slide — revise an individual slide">
+
+Revise a specific slide in an existing slide deck using a natural-language description. The slide deck must already be fully generated before you can revise individual slides.
+
+```bash
+notebooklm generate revise-slide <description> --artifact <id> --slide N [OPTIONS]
+```
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `-a, --artifact ID` | Artifact ID | **Required.** The slide deck to revise |
+| `--slide N` | Integer | **Required.** Zero-based slide index (0 = first slide) |
+| `--wait` | — | Wait for revision to complete |
+| `--json` | — | Machine-readable output |
+
+```bash
+# Revise the first slide
+notebooklm generate revise-slide "Move the title up" --artifact art123 --slide 0
+
+# Revise the fourth slide and wait
+notebooklm generate revise-slide "Remove the taxonomy table" --artifact art123 --slide 3 --wait
+
+# Revise and get JSON output
+notebooklm generate revise-slide "Simplify bullet points" --artifact art123 --slide 1 --json
+```
+
+Use `notebooklm artifact list --type slide-deck` to find the artifact ID for an existing slide deck.
+
+</Accordion>
+
+<Accordion title="quiz — generate a quiz">
+
+Generate a multiple-choice quiz based on your notebook sources.
+
+```bash
+notebooklm generate quiz [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--difficulty` | `easy`, `medium`, `hard` | `medium` | Question difficulty |
+| `--quantity` | `fewer`, `standard`, `more` | `standard` | Number of questions |
+| `-s, --source` | Source ID | all sources | Limit to specific source(s) |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+
+```bash
+# Hard quiz covering all sources
+notebooklm generate quiz --difficulty hard --wait
+
+# Easy quiz from specific sources
+notebooklm generate quiz "Focus on chapter 3 concepts" --difficulty easy -s src_abc
+
+# More questions, JSON output
+notebooklm generate quiz --quantity more --json
+```
+
+Download the quiz after generation with `notebooklm download quiz --format markdown`.
+
+</Accordion>
+
+<Accordion title="flashcards — generate flashcards">
+
+Generate a flashcard deck for studying. Options match those for `quiz`.
+
+```bash
+notebooklm generate flashcards [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--difficulty` | `easy`, `medium`, `hard` | `medium` | Card difficulty |
+| `--quantity` | `fewer`, `standard`, `more` | `standard` | Number of cards |
+| `-s, --source` | Source ID | all sources | Limit to specific source(s) |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+
+```bash
+# Standard flashcards for all sources
+notebooklm generate flashcards
+
+# Harder cards from a specific source
+notebooklm generate flashcards --difficulty hard -s src_abc --wait
+
+# Fewer cards, JSON output
+notebooklm generate flashcards --quantity fewer --json
+```
+
+</Accordion>
+
+<Accordion title="infographic — generate an infographic">
+
+Generate a visual infographic summarizing your notebook sources.
+
+```bash
+notebooklm generate infographic [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--orientation` | `landscape`, `portrait`, `square` | — | Image orientation |
+| `--detail` | `concise`, `standard`, `detailed` | `standard` | Information density |
+| `--style` | `auto`, `sketch-note`, `professional`, `bento-grid`, `editorial`, `instructional`, `bricks`, `clay`, `anime`, `kawaii`, `scientific` | `auto` | Visual style |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+
+```bash
+# Landscape infographic with standard detail
+notebooklm generate infographic --orientation landscape
+
+# Detailed portrait infographic
+notebooklm generate infographic "Key statistics" --orientation portrait --detail detailed --wait
+
+# Kawaii style, JSON output
+notebooklm generate infographic --style kawaii --json
+```
+
+</Accordion>
+
+<Accordion title="data-table — generate a data table">
+
+Generate a structured data table from your notebook sources. The description is required and should specify what data to extract.
+
+```bash
+notebooklm generate data-table <description> [OPTIONS]
+```
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `--wait` | — | Wait for completion inline |
+| `--json` | — | Machine-readable output |
+
+```bash
+# Generate a comparison table
+notebooklm generate data-table "compare key concepts and their properties"
+
+# Wait for completion
+notebooklm generate data-table "list all studies with sample sizes and outcomes" --wait
+
+# JSON output for scripting
+notebooklm generate data-table "extract pricing data" --json
+```
+
+Download the result with `notebooklm download data-table ./data.csv`. The CSV uses UTF-8 with BOM encoding for Excel compatibility.
+
+</Accordion>
+
+<Accordion title="mind-map — generate a mind map">
+
+Generate a hierarchical mind map. This is the only **synchronous** generate command — it completes immediately and requires no `--wait` option.
+
+```bash
+notebooklm generate mind-map [OPTIONS]
+```
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `--json` | — | Machine-readable output |
+
+```bash
+# Generate a mind map (completes immediately)
+notebooklm generate mind-map
+
+# JSON output for automation
+notebooklm generate mind-map --json
+```
+
+Download the mind map as a JSON tree with `notebooklm download mind-map ./map.json`. The JSON structure is `{"name": "Topic", "children": [{"name": "Subtopic", "children": [...]}]}`.
+
+</Accordion>
+
+<Accordion title="report — generate a text report">
+
+Generate a structured text report. Choose from built-in templates or write a fully custom prompt.
+
+```bash
+notebooklm generate report [description] [OPTIONS]
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--format` | `briefing-doc`, `study-guide`, `blog-post`, `custom` | `briefing-doc` | Report template |
+| `--append TEXT` | Text string | — | Append extra instructions to a built-in template |
+| `-s, --source` | Source ID | all sources | Limit to specific source(s) |
+| `--wait` | — | off | Wait for completion inline |
+| `--json` | — | off | Machine-readable output |
+
+```bash
+# Study guide with default settings
+notebooklm generate report --format study-guide
+
+# Executive briefing from specific sources
+notebooklm generate report "Stakeholder summary" --format briefing-doc -s src_001 -s src_002
+
+# Append custom instructions to a built-in template
+notebooklm generate report --format study-guide --append "Target audience: beginners"
+notebooklm generate report --format briefing-doc --append "Focus on AI trends, keep under 2 pages"
+
+# Fully custom report (description auto-selects custom format)
+notebooklm generate report "Create a white paper analyzing the key market trends"
+
+# Wait for completion, JSON output
+notebooklm generate report --format blog-post --wait --json
+```
+
+<Note>
+  `--append` adds instructions to the end of a built-in template prompt. It has no effect when `--format custom` is used; for custom reports, put your full prompt in the `description` argument.
+</Note>
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## Async behavior reference
+
+| Command | Async? | Notes |
+|---------|--------|-------|
+| `audio` | Yes | Returns `task_id`. Audio can take 2–15 minutes. |
+| `video` | Yes | Returns `task_id`. Video can take 5–30+ minutes. |
+| `cinematic-video` | Yes | Alias for `video --format cinematic`. |
+| `slide-deck` | Yes | Returns `task_id`. |
+| `revise-slide` | Yes | Returns `task_id`. |
+| `quiz` | Yes | Returns `task_id`. |
+| `flashcards` | Yes | Returns `task_id`. |
+| `infographic` | Yes | Returns `task_id`. |
+| `data-table` | Yes | Returns `task_id`. |
+| **`mind-map`** | **No** | **Synchronous. Completes immediately.** |
+| `report` | Yes | Returns `task_id`. |
+
+After starting an async generation, poll with `notebooklm artifact poll <task_id>` or block with `notebooklm artifact wait <id>`.

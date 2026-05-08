@@ -1,0 +1,261 @@
+---
+title: "NotebookLMClient — Python async client"
+description: "Main entry point for notebooklm-py. Initialize from saved auth and access notebooks, sources, artifacts, chat, research, notes, settings, and sharing APIs."
+---
+
+`NotebookLMClient` is the top-level class you interact with in every Python automation script. It wraps all NotebookLM RPC calls behind typed sub-APIs — `notebooks`, `sources`, `artifacts`, `chat`, `research`, `notes`, `settings`, and `sharing` — and manages HTTP connection lifecycle automatically when used as an async context manager. You create it by loading browser-saved authentication state from disk, from an environment variable, or by constructing `AuthTokens` manually.
+
+## Quick start
+
+```python
+import asyncio
+from notebooklm import NotebookLMClient
+
+async def main():
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+        print(f"Found {len(notebooks)} notebooks")
+
+asyncio.run(main())
+```
+
+## Class: `NotebookLMClient`
+
+### `from_storage()` — recommended constructor
+
+The recommended way to instantiate the client. Reads authentication tokens from a Playwright storage-state file, an environment variable, or a named profile and returns a client that is ready to be used inside `async with`.
+
+```python
+@classmethod
+async def from_storage(
+    cls,
+    path: str | None = None,
+    timeout: float = 30.0,
+    profile: str | None = None,
+) -> "NotebookLMClient"
+```
+
+<ParamField path="path" type="str | None" default="None">
+  Absolute path to a `storage_state.json` file. When provided, takes precedence over all other resolution methods.
+</ParamField>
+
+<ParamField path="timeout" type="float" default="30.0">
+  HTTP request timeout in seconds applied to every RPC call made through this client.
+</ParamField>
+
+<ParamField path="profile" type="str | None" default="None">
+  Named profile to load auth from (e.g. `"work"`, `"personal"`). Corresponds to `~/.notebooklm/profiles/<name>/storage_state.json`. Ignored when `path` is provided.
+</ParamField>
+
+#### Authentication precedence
+
+When you call `from_storage()` without arguments the client resolves credentials in this order (highest wins):
+
+1. Explicit `path` argument
+2. `NOTEBOOKLM_AUTH_JSON` environment variable (inline JSON — useful for CI/CD)
+3. Explicit `profile` argument
+4. `NOTEBOOKLM_PROFILE` environment variable → `~/.notebooklm/profiles/<name>/storage_state.json`
+5. Active profile read from `~/.notebooklm/active_profile`
+6. `~/.notebooklm/profiles/default/storage_state.json`
+7. `~/.notebooklm/storage_state.json` (legacy fallback)
+
+<Tabs>
+  <Tab title="Default profile">
+    ```python
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+    ```
+  </Tab>
+  <Tab title="Named profile">
+    ```python
+    async with await NotebookLMClient.from_storage(profile="work") as client:
+        notebooks = await client.notebooks.list()
+    ```
+  </Tab>
+  <Tab title="Explicit path">
+    ```python
+    async with await NotebookLMClient.from_storage(
+        path="/secrets/storage_state.json"
+    ) as client:
+        notebooks = await client.notebooks.list()
+    ```
+  </Tab>
+  <Tab title="CI/CD (env var)">
+    ```python
+    import os
+
+    os.environ["NOTEBOOKLM_AUTH_JSON"] = '{"cookies": [...]}'
+
+    async with await NotebookLMClient.from_storage() as client:
+        notebooks = await client.notebooks.list()
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### `__init__()` — manual constructor
+
+Use this when you already have an `AuthTokens` instance (e.g. tokens fetched from a secrets manager).
+
+```python
+def __init__(
+    self,
+    auth: AuthTokens,
+    timeout: float = 30.0,
+    storage_path: Path | None = None,
+)
+```
+
+<ParamField path="auth" type="AuthTokens" required>
+  Authentication tokens obtained from browser login. See [AuthTokens](#authtokens) below.
+</ParamField>
+
+<ParamField path="timeout" type="float" default="30.0">
+  HTTP request timeout in seconds.
+</ParamField>
+
+<ParamField path="storage_path" type="Path | None" default="None">
+  Path to the storage state file. Required for artifact downloads that need cookie authentication.
+</ParamField>
+
+```python
+from notebooklm import NotebookLMClient, AuthTokens
+
+auth = AuthTokens(
+    cookies={"SID": "...", "HSID": "...", "__Secure-1PSID": "..."},
+    csrf_token="...",
+    session_id="..."
+)
+
+async with NotebookLMClient(auth) as client:
+    notebooks = await client.notebooks.list()
+```
+
+---
+
+### `refresh_auth()`
+
+Manually refreshes the CSRF token and session ID by fetching the NotebookLM homepage. The client calls this automatically when it detects authentication errors, so you rarely need to call it yourself. Use it before long-running operations to avoid mid-run token expiry.
+
+```python
+async def refresh_auth(self) -> AuthTokens
+```
+
+**Returns:** Updated `AuthTokens` with fresh `csrf_token` and `session_id`.
+
+**Raises:** `ValueError` if the session has fully expired (cookies invalid). In that case, re-run `notebooklm login`.
+
+```python
+async with await NotebookLMClient.from_storage() as client:
+    await client.refresh_auth()
+    # Now safe to run a long operation
+    status = await client.artifacts.generate_audio(notebook_id)
+```
+
+---
+
+## Sub-API properties
+
+All sub-APIs are initialized when you construct the client. Access them as properties — no separate instantiation needed.
+
+<CardGroup cols={2}>
+  <Card title="client.notebooks" href="/api/notebooks">
+    Create, list, rename, delete notebooks, and fetch AI descriptions.
+  </Card>
+  <Card title="client.sources" href="/api/sources">
+    Add URLs, YouTube videos, files, text, and Drive documents as sources.
+  </Card>
+  <Card title="client.artifacts" href="/api/artifacts">
+    Generate audio, video, reports, quizzes, flashcards, and more.
+  </Card>
+  <Card title="client.chat" href="/api/chat">
+    Ask questions, continue conversations, and configure the chat persona.
+  </Card>
+  <Card title="client.research" href="/api/research">
+    Run web or Drive research agents and import discovered sources.
+  </Card>
+  <Card title="client.notes" href="/api/notes">
+    Create, read, update, and delete text notes and mind maps.
+  </Card>
+  <Card title="client.settings" href="/api/settings">
+    Read and set the global output language and check account limits.
+  </Card>
+  <Card title="client.sharing" href="/api/sharing">
+    Manage public links and per-user sharing permissions.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+<ResponseField name="auth" type="AuthTokens">
+  The current authentication tokens. You can inspect `auth.csrf_token` or `auth.session_id` to debug auth issues.
+</ResponseField>
+
+<ResponseField name="is_connected" type="bool">
+  `True` when the underlying HTTP client session is open. Always `True` inside an `async with` block.
+</ResponseField>
+
+---
+
+## Async context manager pattern
+
+The client manages an `httpx.AsyncClient` internally. You must open and close it — the recommended way is `async with`:
+
+```python
+# Recommended
+async with await NotebookLMClient.from_storage() as client:
+    ...
+
+# Manual (needed in frameworks that control the event loop)
+client = await NotebookLMClient.from_storage()
+await client.__aenter__()
+try:
+    ...
+finally:
+    await client.__aexit__(None, None, None)
+```
+
+---
+
+## Error handling
+
+The library raises `RPCError` for API-level failures and domain-specific subclasses for more targeted errors.
+
+```python
+from notebooklm import RPCError, NotebookLimitError, RateLimitError
+
+try:
+    nb = await client.notebooks.create("New Notebook")
+except NotebookLimitError as e:
+    print(f"Quota reached: {e}")
+except RateLimitError:
+    await asyncio.sleep(10)
+    nb = await client.notebooks.create("New Notebook")
+except RPCError as e:
+    print(f"API error: {e}")
+    # Common causes:
+    # - Session expired (re-run `notebooklm login`)
+    # - Rate limited (wait and retry)
+    # - Invalid parameters
+```
+
+## AuthTokens
+
+You can also construct `AuthTokens` directly and pass them to `NotebookLMClient()` when you manage credentials outside the default storage file.
+
+```python
+from notebooklm import AuthTokens
+
+# From storage (mirrors from_storage class method)
+auth = await AuthTokens.from_storage(profile="work")
+
+# Manual construction
+auth = AuthTokens(
+    cookies={"SID": "...", "HSID": "...", "__Secure-1PSID": "..."},
+    csrf_token="...",
+    session_id="..."
+)
+```

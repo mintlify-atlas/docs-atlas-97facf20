@@ -1,0 +1,117 @@
+---
+title: "Install notebooklm-py"
+description: "Install notebooklm-py from PyPI with pip. Add the browser extra to enable first-time Google login via Playwright, or install a development build from Git."
+---
+
+notebooklm-py is published on PyPI as `notebooklm-py`. A minimal install gives you the Python API and CLI for all operations except browser-based login. To authenticate for the first time, install the `browser` extra, which pulls in Playwright and a Chromium browser. After login, the browser is no longer needed—all subsequent operations use standard HTTP requests via `httpx`.
+
+<Note>
+  Playwright is only required to run `notebooklm login`. Every other command—listing notebooks, adding sources, generating content, downloading artifacts—uses `httpx` and works in headless environments, Docker containers, and CI/CD pipelines without Playwright installed.
+</Note>
+
+## Install
+
+Follow these steps to get from zero to a working installation.
+
+<Steps>
+  <Step title="Check your Python version">
+    notebooklm-py requires Python 3.10 or later.
+
+    ```bash
+    python --version
+    ```
+  </Step>
+
+  <Step title="Install the package">
+    Choose the install that matches your needs.
+
+    <CodeGroup>
+
+    ```bash Standard install
+    pip install notebooklm-py
+    ```
+
+    ```bash With browser login support
+    pip install "notebooklm-py[browser]"
+    ```
+
+    ```bash Development build from Git
+    pip install git+https://github.com/teng-lin/notebooklm-py@main
+    ```
+
+    </CodeGroup>
+
+    Install `notebooklm-py[browser]` if you are setting up for the first time and need to run `notebooklm login`. You can skip this if you already have a `storage_state.json` from another machine.
+
+    <Warning>
+      The `main` branch may contain unstable changes. Use a PyPI release for production workloads.
+    </Warning>
+  </Step>
+
+  <Step title="Install Chromium (browser extra only)">
+    If you installed the `browser` extra, download the Chromium binary that Playwright manages:
+
+    ```bash
+    playwright install chromium
+    ```
+
+    On Linux, you may also need to install system dependencies:
+
+    ```bash
+    playwright install-deps chromium
+    playwright install chromium
+    ```
+  </Step>
+
+  <Step title="Verify the install">
+    Confirm the CLI is available:
+
+    ```bash
+    notebooklm --version
+    ```
+  </Step>
+</Steps>
+
+## Platform notes
+
+| Platform | Status | Notes |
+|---|---|---|
+| **macOS** | Supported | Works out of the box. Chromium downloads automatically. |
+| **Linux** | Supported | Run `playwright install-deps chromium` before `playwright install chromium`. |
+| **Windows** | Supported | Use PowerShell or CMD. Works in CI. |
+
+### Linux: TypeError: onExit workaround
+
+If `playwright install chromium` fails with `TypeError: onExit is not a function`, pin Playwright to a known-working version inside a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install "notebooklm-py[browser]" playwright==1.57.0
+playwright install chromium
+```
+
+### Headless servers and containers
+
+Because Playwright is only required for `notebooklm login`, you can run notebooklm-py on headless servers without a browser. Copy a valid `storage_state.json` from your local machine, or pass auth inline via the `NOTEBOOKLM_AUTH_JSON` environment variable:
+
+```bash
+# On a headless server — no Playwright needed
+pip install notebooklm-py
+
+# Pass auth inline
+export NOTEBOOKLM_AUTH_JSON='{"cookies": [...]}'
+notebooklm list
+```
+
+See [Authenticate with notebooklm-py](/authentication) for details on CI/CD auth.
+
+## Next steps
+
+Once installed, authenticate with your Google account to start using notebooklm-py.
+
+```bash
+notebooklm login
+```
+
+Follow the [quickstart](/quickstart) to create your first notebook and generate content.

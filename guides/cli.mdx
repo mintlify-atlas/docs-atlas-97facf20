@@ -1,0 +1,291 @@
+---
+title: "CLI reference for notebooklm-py"
+description: "Use the notebooklm CLI to manage notebooks, sources, chat, and content generation from the shell with command groups and JSON output for scripting."
+---
+
+The `notebooklm` CLI exposes every feature of the Python library as shell commands organized into logical groups. You can run it interactively, embed it in shell scripts, or call it from CI/CD pipelines. Most commands accept a `--json` flag for machine-readable output and support partial notebook IDs for convenience.
+
+## Command structure
+
+Every invocation follows this shape:
+
+```
+notebooklm [-p PROFILE] [--storage PATH] [--version] [-v] <command> [OPTIONS] [ARGS]
+```
+
+### Global options
+
+| Option | Description |
+|---|---|
+| `-p, --profile NAME` | Use a named profile (overrides `NOTEBOOKLM_PROFILE`) |
+| `--storage PATH` | Override the default storage location |
+| `-v, --verbose` | Enable verbose output |
+| `--version` | Show version and exit |
+| `--help` | Show help message |
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `NOTEBOOKLM_HOME` | Base directory for all config files (default: `~/.notebooklm`) |
+| `NOTEBOOKLM_PROFILE` | Active profile name (default: `default`) |
+| `NOTEBOOKLM_AUTH_JSON` | Inline authentication JSON (for CI/CD, no file writes needed) |
+| `NOTEBOOKLM_DEBUG_RPC` | Enable RPC debug logging—set to `1` to activate |
+
+## Session commands
+
+Session commands manage authentication and the active notebook context. You must authenticate before using any other command.
+
+| Command | Description | Example |
+|---|---|---|
+| `login` | Authenticate via browser | `notebooklm login` |
+| `login --browser msedge` | Use Edge for SSO-gated orgs | `notebooklm login --browser msedge` |
+| `use <id>` | Set active notebook | `notebooklm use abc123` |
+| `status` | Show current context | `notebooklm status` |
+| `status --paths` | Show config file paths | `notebooklm status --paths` |
+| `status --json` | JSON output | `notebooklm status --json` |
+| `clear` | Clear active notebook | `notebooklm clear` |
+| `auth check` | Diagnose auth issues | `notebooklm auth check` |
+| `auth check --test` | Validate with a live network test | `notebooklm auth check --test` |
+| `doctor` | Check environment health | `notebooklm doctor` |
+| `doctor --fix` | Auto-fix detected issues | `notebooklm doctor --fix` |
+
+### Partial ID matching
+
+`notebooklm use <id>` and most ID-accepting commands support partial prefix matching. Providing the first six or more characters of a UUID is enough, as long as the prefix is unique.
+
+```bash
+notebooklm use abc  # Matches any notebook ID starting with "abc"
+```
+
+## Profile commands
+
+Named profiles let you manage multiple Google accounts. Each profile has its own session file and active notebook context.
+
+| Command | Description | Example |
+|---|---|---|
+| `profile list` | List all profiles | `notebooklm profile list` |
+| `profile create <name>` | Create a profile | `notebooklm profile create work` |
+| `profile switch <name>` | Set the active profile | `notebooklm profile switch work` |
+| `profile delete <name>` | Delete a profile | `notebooklm profile delete old` |
+| `profile rename <old> <new>` | Rename a profile | `notebooklm profile rename old new` |
+
+## Notebook commands
+
+| Command | Description | Example |
+|---|---|---|
+| `list` | List all notebooks | `notebooklm list` |
+| `create <title>` | Create a notebook | `notebooklm create "Research"` |
+| `delete <id>` | Delete a notebook | `notebooklm delete abc123` |
+| `rename <title>` | Rename the current notebook | `notebooklm rename "New Title"` |
+| `summary` | Get the AI-generated summary | `notebooklm summary` |
+
+## Chat commands
+
+The `ask` command sends a question to the active notebook and prints the answer. Use `--save-as-note` to persist the response as a notebook note.
+
+| Command | Description | Example |
+|---|---|---|
+| `ask <question>` | Ask a question | `notebooklm ask "What is this about?"` |
+| `ask -s <id>` | Limit to specific sources | `notebooklm ask "Summarize" -s src1 -s src2` |
+| `ask --json` | Include source references | `notebooklm ask "Explain X" --json` |
+| `ask --save-as-note` | Save response as a note | `notebooklm ask "Explain X" --save-as-note` |
+| `ask --save-as-note --note-title "T"` | Save with a custom title | `notebooklm ask "Explain X" --save-as-note --note-title "T"` |
+| `configure --mode learning-guide` | Set the chat persona | `notebooklm configure --mode learning-guide` |
+| `history` | View conversation history | `notebooklm history` |
+| `history --clear` | Clear local conversation cache | `notebooklm history --clear` |
+| `history --save` | Save history as a note | `notebooklm history --save` |
+
+## Source commands
+
+`source add` auto-detects the content type from its argument: HTTP URLs become web sources, YouTube URLs extract transcripts, and file paths trigger uploads.
+
+| Command | Arguments | Options | Example |
+|---|---|---|---|
+| `source list` | — | — | `notebooklm source list` |
+| `source add <content>` | URL / file path / text | — | `notebooklm source add "https://..."` |
+| `source add-drive <id> <title>` | Drive file ID, title | — | `notebooklm source add-drive abc123 "Doc"` |
+| `source add-research <query>` | Search query | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--no-wait` | `notebooklm source add-research "AI" --mode deep --no-wait` |
+| `source get <id>` | Source ID | — | `notebooklm source get src123` |
+| `source fulltext <id>` | Source ID | `--json`, `-o FILE` | `notebooklm source fulltext src123 -o content.txt` |
+| `source guide <id>` | Source ID | `--json` | `notebooklm source guide src123` |
+| `source rename <id> <title>` | Source ID, new title | — | `notebooklm source rename src123 "New Name"` |
+| `source refresh <id>` | Source ID | — | `notebooklm source refresh src123` |
+| `source delete <id>` | Source ID | — | `notebooklm source delete src123` |
+| `source wait <id>` | Source ID | `--timeout`, `--interval` | `notebooklm source wait src123` |
+
+## Research commands
+
+Use `research` commands to check on and wait for background web or Drive research started with `source add-research --no-wait`.
+
+| Command | Options | Example |
+|---|---|---|
+| `research status` | `--json` | `notebooklm research status` |
+| `research wait` | `--timeout`, `--interval`, `--import-all`, `--json` | `notebooklm research wait --import-all` |
+
+## Generate commands
+
+All `generate` subcommands support `--source/-s` (repeatable) to target specific sources, `--language` for multilingual output, `--json` for machine-readable task IDs, and `--retry N` for automatic exponential backoff on rate limits. Most are asynchronous by default—use `--wait` to block until completion.
+
+| Command | Options | Example |
+|---|---|---|
+| `generate audio [desc]` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]`, `--wait` | `notebooklm generate audio "Focus on history" --wait` |
+| `generate video [desc]` | `--format [explainer\|brief\|cinematic]`, `--style [auto\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--wait` | `notebooklm generate video --style whiteboard --wait` |
+| `generate cinematic-video [desc]` | Alias for `video --format cinematic`; same options | `notebooklm generate cinematic-video "Documentary summary" --wait` |
+| `generate slide-deck [desc]` | `--format [detailed\|presenter]`, `--length [default\|short]`, `--wait` | `notebooklm generate slide-deck --wait` |
+| `generate revise-slide <desc>` | `-a/--artifact <id>` (required), `--slide N` (required), `--wait` | `notebooklm generate revise-slide "Move title up" --artifact <id> --slide 0` |
+| `generate quiz [desc]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]`, `--wait` | `notebooklm generate quiz --difficulty hard --wait` |
+| `generate flashcards [desc]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]`, `--wait` | `notebooklm generate flashcards --wait` |
+| `generate infographic [desc]` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--wait` | `notebooklm generate infographic --orientation portrait --wait` |
+| `generate report [desc]` | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append "..."`, `--wait` | `notebooklm generate report --format study-guide --wait` |
+| `generate data-table <desc>` | `--wait` | `notebooklm generate data-table "compare key concepts" --wait` |
+| `generate mind-map` | *(synchronous, no `--wait` option)* | `notebooklm generate mind-map` |
+
+## Artifact commands
+
+| Command | Arguments | Options | Example |
+|---|---|---|---|
+| `artifact list` | — | `--type` | `notebooklm artifact list --type audio` |
+| `artifact get <id>` | Artifact ID | — | `notebooklm artifact get art123` |
+| `artifact rename <id> <title>` | Artifact ID, title | — | `notebooklm artifact rename art123 "Title"` |
+| `artifact delete <id>` | Artifact ID | — | `notebooklm artifact delete art123` |
+| `artifact export <id>` | Artifact ID | `--type [docs\|sheets]`, `--title` | `notebooklm artifact export art123 --type sheets` |
+| `artifact poll <task_id>` | Task ID | — | `notebooklm artifact poll task123` |
+| `artifact wait <id>` | Artifact ID | `--timeout`, `--interval` | `notebooklm artifact wait art123` |
+
+## Download commands
+
+Download commands write files to your local machine. Use `--all` for batch downloads, `--latest` for the most recent artifact, or `-a/--artifact` to target a specific ID.
+
+| Command | Options | Default format | Example |
+|---|---|---|---|
+| `download audio [path]` | `--all`, `--latest`, `-a`, `--force` | `.mp4` | `notebooklm download audio ./podcast.mp3` |
+| `download video [path]` | `--all`, `--latest`, `-a`, `--force` | `.mp4` | `notebooklm download video ./overview.mp4` |
+| `download cinematic-video [path]` | Same as `video` | `.mp4` | `notebooklm download cinematic-video ./documentary.mp4` |
+| `download slide-deck [path]` | `--format [pdf\|pptx]`, `--all`, `--latest` | `.pdf` | `notebooklm download slide-deck --format pptx` |
+| `download infographic [path]` | `--all`, `--latest`, `-a` | `.png` | `notebooklm download infographic ./info.png` |
+| `download report [path]` | `--all`, `--latest`, `-a` | `.md` | `notebooklm download report ./study-guide.md` |
+| `download mind-map [path]` | `--all`, `--latest`, `-a` | `.json` | `notebooklm download mind-map ./map.json` |
+| `download data-table [path]` | `--all`, `--latest`, `-a` | `.csv` | `notebooklm download data-table ./data.csv` |
+| `download quiz [path]` | `--format [json\|markdown\|html]`, `-a` | `.json` | `notebooklm download quiz --format markdown quiz.md` |
+| `download flashcards [path]` | `--format [json\|markdown\|html]`, `-a` | `.json` | `notebooklm download flashcards cards.json` |
+
+## Language commands
+
+Language is a **global** setting that applies to all artifact generation in your account.
+
+| Command | Description | Example |
+|---|---|---|
+| `language list` | List all 80+ supported languages | `notebooklm language list` |
+| `language get` | Show current language setting | `notebooklm language get` |
+| `language get --local` | Skip server sync | `notebooklm language get --local` |
+| `language set <code>` | Set the output language | `notebooklm language set zh_Hans` |
+| `language set <code> --local` | Save locally only | `notebooklm language set ja --local` |
+
+## Sharing commands
+
+| Command | Description | Example |
+|---|---|---|
+| `share status` | Show sharing configuration | `notebooklm share status` |
+| `share public --enable` | Enable public link sharing | `notebooklm share public --enable` |
+| `share public --disable` | Disable public sharing | `notebooklm share public --disable` |
+| `share view-level full` | Set viewers to see full notebook | `notebooklm share view-level full` |
+| `share view-level chat` | Restrict viewers to chat only | `notebooklm share view-level chat` |
+| `share add <email>` | Share with a user (viewer by default) | `notebooklm share add user@example.com` |
+| `share update <email>` | Change a user's permission | `notebooklm share update user@example.com --permission editor` |
+| `share remove <email>` | Remove user access | `notebooklm share remove user@example.com` |
+
+## Note commands
+
+| Command | Arguments | Example |
+|---|---|---|
+| `note list` | — | `notebooklm note list` |
+| `note create <content>` | Note text | `notebooklm note create "My notes..."` |
+| `note get <id>` | Note ID | `notebooklm note get note123` |
+| `note save <id>` | Note ID + `--title`, `--content` | `notebooklm note save note123 --title "Updated title"` |
+| `note rename <id> <title>` | Note ID, title | `notebooklm note rename note123 "Title"` |
+| `note delete <id>` | Note ID | `notebooklm note delete note123` |
+
+## Skill commands
+
+Skill commands install the NotebookLM skill into local agent directories so tools like Claude Code can pick it up automatically.
+
+| Command | Description | Example |
+|---|---|---|
+| `skill install` | Install to `~/.claude/skills/` and `~/.agents/skills/` | `notebooklm skill install` |
+| `skill status` | Check installed targets and version | `notebooklm skill status` |
+| `skill uninstall` | Remove installed targets | `notebooklm skill uninstall` |
+| `skill show` | Display the packaged skill file | `notebooklm skill show` |
+
+## Common workflows
+
+These end-to-end examples show how to combine CLI commands into useful pipelines.
+
+### Research → podcast
+
+```bash
+notebooklm create "Climate Change Research"
+notebooklm use <notebook_id>
+notebooklm source add "https://en.wikipedia.org/wiki/Climate_change"
+notebooklm source add-research "climate change policy 2024" --mode deep --import-all
+notebooklm generate audio "Focus on policy solutions" --format debate --wait
+notebooklm download audio ./climate-podcast.mp3
+```
+
+### Document analysis → study materials
+
+```bash
+notebooklm create "Exam Prep"
+notebooklm use <id>
+notebooklm source add "./textbook-chapter.pdf"
+notebooklm source add "./lecture-notes.pdf"
+notebooklm summary
+notebooklm generate quiz --difficulty hard --wait
+notebooklm generate flashcards --wait
+notebooklm generate report --format study-guide --wait
+notebooklm download quiz --format markdown quiz.md
+notebooklm download flashcards cards.json
+notebooklm download report ./study-guide.md
+```
+
+### YouTube → quick summary
+
+```bash
+notebooklm create "Video Notes"
+notebooklm use <id>
+notebooklm source add "https://www.youtube.com/watch?v=VIDEO_ID"
+notebooklm summary
+notebooklm ask "What are the main points?"
+notebooklm generate report --format briefing-doc --wait
+notebooklm download report ./briefing.md
+```
+
+### Bulk import
+
+```bash
+notebooklm use <id>
+notebooklm source add "https://example.com/article1"
+notebooklm source add "https://example.com/article2"
+
+# Loop over local files
+for f in ./papers/*.pdf; do
+  notebooklm source add "$f"
+done
+```
+
+<Tip>
+  Use `--wait` when you need a file on disk immediately. For long-running generation (audio, video, slide decks), omit `--wait` and check back with `notebooklm artifact list`, or use `artifact wait <id>` in a background task.
+
+  Nearly every command supports `--json` for structured output, making it easy to parse results with `jq` or pass IDs between steps in a script.
+</Tip>
+
+## Tips for LLM agents
+
+When this CLI is called programmatically by an AI agent, keep the following in mind.
+
+- Use `notebooklm use <id>` to set context for a single-agent session, or pass `-n <id>` directly to commands in parallel workflows to avoid context collisions.
+- Generation commands are async by default except `mind-map`, which is synchronous. Use `--no-wait` for long operations and poll with `artifact wait` in a subagent.
+- Partial IDs work for most commands—six or more characters is usually enough.
+- Use `--json` on every command to get machine-readable output instead of styled tables.
+- `source add` auto-detects the content type from the argument, so you do not need separate commands for URLs, files, or YouTube links.
+- For non-blocking deep research, run `source add-research --mode deep --no-wait` and then `research wait --import-all` in a subagent.

@@ -1,0 +1,139 @@
+---
+title: "notebooklm CLI — command reference overview"
+description: "Overview of the notebooklm CLI command groups, global options, environment variables, and common usage patterns for interactive and automated workflows."
+---
+
+The `notebooklm` CLI gives you full programmatic access to NotebookLM from your terminal, including capabilities not available in the web UI such as batch downloads, quiz export, PPTX generation, and source fulltext retrieval. Commands are organized into groups by function, and most accept `--json` for machine-readable output suitable for scripting and LLM agents.
+
+## Command structure
+
+```
+notebooklm [-p PROFILE] [--storage PATH] [--version] [-v] <command> [OPTIONS] [ARGS]
+```
+
+All commands must come after the global flags. You can set an active notebook with `notebooklm use <id>` so you don't have to pass `-n <id>` to every command.
+
+## Global options
+
+| Option | Description |
+|--------|-------------|
+| `-p, --profile NAME` | Use a named profile, overrides `NOTEBOOKLM_PROFILE` |
+| `--storage PATH` | Override the default storage location |
+| `-v, --verbose` | Enable verbose output |
+| `--version` | Show version and exit |
+| `--help` | Show help message |
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `NOTEBOOKLM_HOME` | Base directory for all config files (default: `~/.notebooklm`) |
+| `NOTEBOOKLM_PROFILE` | Active profile name (default: `default`) |
+| `NOTEBOOKLM_AUTH_JSON` | Inline authentication JSON — no file needed (for CI/CD) |
+| `NOTEBOOKLM_DEBUG_RPC` | Enable RPC debug logging (`1` to enable) |
+
+## Command groups
+
+The CLI organizes commands into functional groups. Use `notebooklm <group> --help` to see all subcommands and options.
+
+<CardGroup cols={2}>
+  <Card title="Session" icon="key">
+    `login`, `use`, `status`, `clear`
+  </Card>
+  <Card title="Auth" icon="shield-check">
+    `auth check`, `auth check --test`
+  </Card>
+  <Card title="Doctor" icon="stethoscope">
+    `doctor`, `doctor --fix`
+  </Card>
+  <Card title="Profile" icon="user">
+    `profile list/create/switch/delete/rename`
+  </Card>
+  <Card title="Notebooks" icon="book">
+    `list`, `create`, `delete`, `rename`, `summary`
+  </Card>
+  <Card title="Chat" icon="message-circle">
+    `ask`, `configure`, `history`
+  </Card>
+  <Card title="Sources" icon="file-text">
+    `source add/add-drive/add-research/get/fulltext/guide/rename/refresh/delete/wait`
+  </Card>
+  <Card title="Research" icon="search">
+    `research status/wait`
+  </Card>
+  <Card title="Generate" icon="sparkles">
+    `generate audio/video/cinematic-video/slide-deck/revise-slide/quiz/flashcards/infographic/data-table/mind-map/report`
+  </Card>
+  <Card title="Download" icon="download">
+    `download audio/video/cinematic-video/slide-deck/infographic/report/mind-map/data-table/quiz/flashcards`
+  </Card>
+  <Card title="Artifacts" icon="layers">
+    `artifact list/get/rename/delete/export/poll/wait/suggestions`
+  </Card>
+  <Card title="Notes" icon="pencil">
+    `note list/create/get/save/rename/delete`
+  </Card>
+  <Card title="Sharing" icon="share-2">
+    `share status/public/view-level/add/update/remove`
+  </Card>
+  <Card title="Language" icon="globe">
+    `language list/get/set`
+  </Card>
+  <Card title="Skills" icon="puzzle">
+    `skill install/status/uninstall/show`
+  </Card>
+  <Card title="Agents" icon="bot">
+    `agent show`
+  </Card>
+  <Card title="Metadata" icon="info">
+    `metadata`
+  </Card>
+</CardGroup>
+
+## Common flags
+
+Most commands accept these flags in addition to their specific options:
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON for scripting and agent workflows |
+| `-n, --notebook ID` | Specify notebook ID (uses active context if omitted) |
+| `-s, --source ID` | Specify source ID (repeatable on some commands) |
+
+## Health checks
+
+Before troubleshooting authentication issues, run these two commands:
+
+```bash
+# Check environment: storage paths, dependencies, auth file
+notebooklm doctor
+
+# Auto-fix detected issues (e.g. missing directories)
+notebooklm doctor --fix
+
+# Validate auth locally
+notebooklm auth check
+
+# Validate auth with a live network request
+notebooklm auth check --test
+```
+
+`doctor` checks your environment health—storage paths, browser dependencies, and configuration. `auth check` inspects your session cookies and optionally tests a token fetch from NotebookLM.
+
+## Tips for LLM agents
+
+When using the CLI programmatically or from an LLM agent:
+
+1. **Use `--json`** on every command for machine-readable output. Most commands output structured JSON when this flag is set.
+
+2. **Partial IDs work**: `notebooklm use abc` matches any notebook ID starting with `"abc"`. The same applies to source and artifact IDs.
+
+3. **Generation is async by default** — all `generate` subcommands except `mind-map` return immediately with a `task_id`. Use `artifact wait <id>` in a background task instead of `--wait` to avoid blocking for minutes.
+
+4. **Mind map is synchronous** — `generate mind-map` completes immediately with no `--wait` option needed.
+
+5. **Isolate agent runs** with `NOTEBOOKLM_HOME=/tmp/<agent-id>` when multiple agents share one machine.
+
+6. **Two ways to specify notebooks**: set context with `notebooklm use <id>`, or pass `-n <id>` explicitly to each command.
+
+For the full generate command reference, see [Generate](/cli/generate). For downloading artifacts, see [Download](/cli/download).

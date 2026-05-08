@@ -1,0 +1,399 @@
+---
+title: "Generate content with NotebookLM"
+description: "Generate audio overviews, videos, quizzes, flashcards, reports, infographics, data tables, and mind maps from NotebookLM sources via CLI or Python API."
+---
+
+NotebookLM Studio exposes nine content types through notebooklm-py, covering everything from audio podcasts to structured data tables. Each type has its own set of format and style options, and most support multilingual output through the `--language` flag. You can access every type via the CLI or the Python API, and download results in multiple file formats—several of which are not available through the web UI.
+
+## Content types at a glance
+
+| Type | Options | CLI command | Download format |
+|---|---|---|---|
+| Audio overview | 4 formats, 3 lengths, 50+ languages | `generate audio` | MP3 / MP4 |
+| Video overview | 3 formats, 9 visual styles | `generate video` | MP4 |
+| Slide deck | 2 formats, 2 lengths; per-slide revision | `generate slide-deck` | PDF, PPTX |
+| Infographic | 3 orientations, 3 detail levels | `generate infographic` | PNG |
+| Quiz | configurable quantity and difficulty | `generate quiz` | JSON, Markdown, HTML |
+| Flashcards | configurable quantity and difficulty | `generate flashcards` | JSON, Markdown, HTML |
+| Report | 4 formats with template customization | `generate report` | Markdown |
+| Data table | natural-language structure description | `generate data-table` | CSV |
+| Mind map | synchronous, instant output | `generate mind-map` | JSON |
+
+## Audio overview (podcast)
+
+An audio overview produces a spoken conversation about your sources. You can choose the conversational style, duration, and language. The `deep-dive` format is the default and produces the most thorough discussion.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    # Default deep-dive podcast, wait for completion
+    notebooklm generate audio --wait
+
+    # Debate format with custom instructions
+    notebooklm generate audio "Compare the two main viewpoints" --format debate --wait
+
+    # Short briefing in Japanese
+    notebooklm generate audio --format brief --length short --language ja --wait
+
+    # Download the result
+    notebooklm download audio ./podcast.mp3
+    ```
+
+    Formats: `deep-dive` (default), `brief`, `critique`, `debate`
+    Lengths: `short`, `default`, `long`
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import NotebookLMClient, AudioFormat, AudioLength
+    import asyncio
+
+    async def main():
+        async with await NotebookLMClient.from_storage() as client:
+            status = await client.artifacts.generate_audio(
+                nb_id,
+                audio_format=AudioFormat.DEEP_DIVE,
+                audio_length=AudioLength.DEFAULT,
+                instructions="Make it engaging and accessible",
+                language="en",
+            )
+            final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=600)
+            if final.is_complete:
+                path = await client.artifacts.download_audio(nb_id, "podcast.mp3")
+                print(f"Saved to: {path}")
+
+    asyncio.run(main())
+    ```
+  </Tab>
+</Tabs>
+
+## Video overview
+
+A video overview produces an animated explainer of your sources. Use the `cinematic` format (or the `cinematic-video` CLI alias) for a more cinematic style.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    # Whiteboard-style explainer
+    notebooklm generate video --style whiteboard --wait
+
+    # Cinematic format via alias
+    notebooklm generate cinematic-video "Documentary about quantum physics" --wait
+
+    # Download
+    notebooklm download video ./overview.mp4
+    notebooklm download cinematic-video ./documentary.mp4
+    ```
+
+    Formats: `explainer` (default), `brief`, `cinematic`
+    Styles: `auto`, `classic`, `whiteboard`, `kawaii`, `anime`, `watercolor`, `retro-print`, `heritage`, `paper-craft`
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import VideoFormat, VideoStyle
+
+    status = await client.artifacts.generate_video(
+        nb_id,
+        video_format=VideoFormat.EXPLAINER,
+        video_style=VideoStyle.WHITEBOARD,
+        instructions="Explain for a general audience",
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=1800)
+    if final.is_complete:
+        await client.artifacts.download_video(nb_id, "video.mp4")
+    ```
+  </Tab>
+</Tabs>
+
+## Slide deck
+
+A slide deck generates a presentation from your sources. You can choose between a `detailed` format (more slides with content) and a `presenter` format (fewer, punchier slides). After generation, use `revise-slide` to modify individual slides with a natural-language prompt.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    # Generate a detailed slide deck
+    notebooklm generate slide-deck --format detailed --wait
+
+    # Revise the first slide (zero-indexed)
+    notebooklm generate revise-slide "Move the title up and make it bolder" \
+      --artifact <artifact_id> --slide 0 --wait
+
+    # Download as PDF (default) or PPTX
+    notebooklm download slide-deck ./slides.pdf
+    notebooklm download slide-deck --format pptx ./slides.pptx
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import SlideDeckFormat, SlideDeckLength
+
+    status = await client.artifacts.generate_slide_deck(
+        nb_id,
+        deck_format=SlideDeckFormat.DETAILED_DECK,
+        deck_length=SlideDeckLength.DEFAULT,
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=900)
+    if final.is_complete:
+        await client.artifacts.download_slide_deck(nb_id, "slides.pdf")
+    ```
+  </Tab>
+</Tabs>
+
+## Infographic
+
+An infographic produces a single image summarizing your sources. Control the orientation and level of detail to match your use case.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    notebooklm generate infographic --orientation portrait --detail detailed --wait
+    notebooklm download infographic ./infographic.png
+    ```
+
+    Orientations: `landscape`, `portrait`, `square`
+    Detail levels: `concise`, `standard`, `detailed`
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import InfographicOrientation, InfographicDetail
+
+    status = await client.artifacts.generate_infographic(
+        nb_id,
+        orientation=InfographicOrientation.PORTRAIT,
+        detail=InfographicDetail.DETAILED,
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=900)
+    await client.artifacts.download_infographic(nb_id, "infographic.png")
+    ```
+  </Tab>
+</Tabs>
+
+## Quiz
+
+A quiz generates multiple-choice questions from your sources. You can control difficulty and roughly how many questions are produced. Download in JSON (structured), Markdown (human-readable), or HTML (raw) format.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    notebooklm generate quiz --difficulty hard --quantity more --wait
+    notebooklm download quiz --format markdown quiz.md
+    notebooklm download quiz --format json quiz.json
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import QuizDifficulty, QuizQuantity
+
+    status = await client.artifacts.generate_quiz(
+        nb_id,
+        difficulty=QuizDifficulty.HARD,
+        quantity=QuizQuantity.MORE,
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=900)
+    await client.artifacts.download_quiz(nb_id, "quiz.json", output_format="json")
+    await client.artifacts.download_quiz(nb_id, "quiz.md", output_format="markdown")
+    ```
+  </Tab>
+</Tabs>
+
+## Flashcards
+
+Flashcards work the same way as quizzes—same difficulty and quantity options, same download formats. The downloaded JSON normalizes the API's `f`/`b` keys to `front`/`back` for readability.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    notebooklm generate flashcards --difficulty medium --wait
+    notebooklm download flashcards cards.json
+    notebooklm download flashcards --format markdown cards.md
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import QuizDifficulty, QuizQuantity
+
+    status = await client.artifacts.generate_flashcards(
+        nb_id,
+        difficulty=QuizDifficulty.MEDIUM,
+        quantity=QuizQuantity.STANDARD,
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=900)
+    await client.artifacts.download_flashcards(nb_id, "cards.json", output_format="json")
+    ```
+  </Tab>
+</Tabs>
+
+## Report
+
+A report generates a structured text document. Choose from four formats: `briefing-doc`, `study-guide`, `blog-post`, or `custom`. For the built-in formats, use `--append` to add extra instructions without losing the format's built-in structure.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    # Study guide with extra instructions
+    notebooklm generate report --format study-guide \
+      --append "Target audience: beginners" --wait
+
+    # Custom prompt (use positional description + --format custom)
+    notebooklm generate report "Write a white paper analyzing key trends" \
+      --format custom --wait
+
+    notebooklm download report ./study-guide.md
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import ReportFormat
+
+    status = await client.artifacts.generate_report(
+        nb_id,
+        report_format=ReportFormat.STUDY_GUIDE,
+        extra_instructions="Target audience: beginners",
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=900)
+    await client.artifacts.download_report(nb_id, "study-guide.md")
+    ```
+  </Tab>
+</Tabs>
+
+## Data table
+
+A data table produces a structured spreadsheet in CSV format. Describe the structure you want in natural language as the required description argument.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    notebooklm generate data-table "compare key concepts across sources" --wait
+    notebooklm download data-table ./research-data.csv
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    status = await client.artifacts.generate_data_table(
+        nb_id,
+        description="Compare key concepts across sources",
+    )
+    final = await client.artifacts.wait_for_completion(nb_id, status.task_id, timeout=900)
+    await client.artifacts.download_data_table(nb_id, "research-data.csv")
+    ```
+
+    The downloaded CSV uses UTF-8 with BOM encoding for Excel compatibility.
+  </Tab>
+</Tabs>
+
+## Mind map
+
+A mind map produces a hierarchical JSON tree of concepts from your sources. Unlike all other content types, mind map generation is **synchronous**—it completes immediately and you do not need to wait for it.
+
+<Note>
+  Mind map is the only generation type that is synchronous. You do not need `--wait` in the CLI or `wait_for_completion` in Python. The result is returned directly.
+</Note>
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    # No --wait needed
+    notebooklm generate mind-map
+    notebooklm download mind-map ./concept-map.json
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Returns result directly, no polling required
+    result = await client.artifacts.generate_mind_map(nb_id)
+    await client.artifacts.download_mind_map(nb_id, "concept-map.json")
+    ```
+
+    The JSON structure uses `{"name": "Topic", "children": [...]}` for easy integration with visualization tools.
+  </Tab>
+</Tabs>
+
+## Features beyond the web UI
+
+Several download and generation features are available only through the CLI or Python API—not through NotebookLM's web interface.
+
+| Feature | Command | Description |
+|---|---|---|
+| Batch downloads | `download <type> --all` | Download all artifacts of a type at once |
+| Quiz / flashcard export | `download quiz --format json` | Export as JSON, Markdown, or HTML |
+| Mind map data extraction | `download mind-map` | Export hierarchical JSON for visualization tools |
+| Data table export | `download data-table` | Download structured tables as CSV |
+| Slide deck as PPTX | `download slide-deck --format pptx` | Download editable PowerPoint (web UI only offers PDF) |
+| Slide revision | `generate revise-slide "prompt" --artifact <id> --slide N` | Modify individual slides with natural language |
+| Report template append | `generate report --format study-guide --append "..."` | Append custom instructions to built-in templates |
+| Source fulltext access | `source fulltext <id>` | Retrieve the indexed text content of any source |
+| Save chat to notes | `ask "..." --save-as-note` | Save Q&A answers as notebook notes |
+
+## Export to Google Docs and Sheets
+
+Reports and data tables can be exported directly to your Google Drive.
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    # Export a report to Google Docs
+    notebooklm artifact export <artifact_id> --type docs --title "My Briefing Doc"
+
+    # Export a data table to Google Sheets
+    notebooklm artifact export <artifact_id> --type sheets --title "Research Data"
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from notebooklm import ExportType
+
+    # Export report to Google Docs
+    result = await client.artifacts.export_report(
+        nb_id,
+        artifact_id="report_123",
+        title="My Briefing Doc",
+        export_type=ExportType.DOCS,
+    )
+
+    # Export data table to Google Sheets
+    result = await client.artifacts.export_data_table(
+        nb_id,
+        artifact_id="table_456",
+        title="Research Data",
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Waiting for completion
+
+Most generation commands are asynchronous. Use `artifact wait` or the Python `wait_for_completion` method when you need the file before continuing.
+
+<Note>
+  Use `artifact wait <id>` in a background task or subagent rather than blocking the main conversation. Audio and video generation can take 10 to 45 minutes.
+</Note>
+
+```bash
+# Start generation, capture task ID from JSON output
+TASK_ID=$(notebooklm generate audio --json | jq -r .task_id)
+
+# Later: wait for the artifact and download
+notebooklm artifact wait $TASK_ID
+notebooklm download audio ./podcast.mp3
+```
+
+## Rate limiting and retries
+
+Use `--retry N` to automatically retry generation on rate-limit errors with exponential backoff. This is especially useful in batch scripts.
+
+```bash
+notebooklm generate quiz --retry 3 --wait
+notebooklm generate audio --retry 5 --format debate --wait
+```
+
+## Multilingual output
+
+All generate commands accept `--language` to override the global language setting for that one invocation. Set the global language with `notebooklm language set <code>`.
+
+```bash
+notebooklm generate audio --language ja --wait    # Japanese podcast
+notebooklm generate video --language zh_Hans --wait  # Chinese video
+notebooklm generate report --language de --format study-guide --wait  # German study guide
+```
+
+Run `notebooklm language list` to see all 80+ supported language codes.
